@@ -33,13 +33,20 @@ class MalApi {
       '?fields=$fields&limit=1000&nsfw=true',
     );
 
+    final clientId = kMalClientId.trim();
+    if (clientId.isEmpty || clientId.startsWith('PASTE_')) {
+      throw const MalException(
+          'No Client ID yet. Paste it into lib/secrets.dart, then fully '
+          'restart the app (stop and run again, not hot reload).');
+    }
+
     final entries = <ListEntry>[];
     while (next != null) {
       final http.Response res;
       try {
         res = await _client.get(
           next,
-          headers: {'X-MAL-CLIENT-ID': kMalClientId},
+          headers: {'X-MAL-CLIENT-ID': clientId},
         ).timeout(_timeout);
       } catch (_) {
         throw const MalException(
@@ -54,13 +61,14 @@ class MalApi {
         case 403:
           throw const MalException(
               'That list is private. Set your MAL list to public and try again.');
-        case 400:
         case 401:
-          throw const MalException(
-              'MyAnimeList rejected the Client ID. Check lib/secrets.dart.');
+          throw MalException('MyAnimeList rejected the Client ID '
+              '(${clientId.length} characters, ends in '
+              '"${clientId.length >= 4 ? clientId.substring(clientId.length - 4) : clientId}"). '
+              '${_malError(res)}');
         default:
-          throw MalException(
-              'MyAnimeList returned an error (${res.statusCode}). Try again in a bit.');
+          throw MalException('MyAnimeList returned error ${res.statusCode} '
+              'on the $kind request. ${_malError(res)}');
       }
 
       final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -73,6 +81,19 @@ class MalApi {
       next = nextUrl is String ? Uri.parse(nextUrl) : null;
     }
     return entries;
+  }
+
+  /// MAL's own error code and message, e.g. "invalid_parameters".
+  static String _malError(http.Response res) {
+    try {
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final code = j['error'] ?? '';
+      final msg = j['message'] ?? '';
+      return 'MAL says: $code${msg.toString().isEmpty ? '' : ' - $msg'}';
+    } catch (_) {
+      final body = res.body.length > 120 ? res.body.substring(0, 120) : res.body;
+      return 'MAL says: $body';
+    }
   }
 
   /// Profile picture URL, or null if the user has none or Jikan is down.
