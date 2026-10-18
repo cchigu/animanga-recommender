@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/home_screen.dart';
+import 'services/library_store.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(
@@ -14,7 +15,11 @@ void main() {
       systemNavigationBarColor: Colors.transparent,
     ),
   );
+
+  await LibraryStore.instance.load();
   runApp(const AnimangaApp());
+  // Quietly refresh lists that are more than a few hours old.
+  LibraryStore.instance.refreshIfStale();
 }
 
 class AnimangaApp extends StatelessWidget {

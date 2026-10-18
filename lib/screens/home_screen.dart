@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/demo_titles.dart';
+import '../services/library_store.dart';
 import '../theme.dart';
 import '../widgets/countdown.dart';
 import '../widgets/profile_avatar.dart';
@@ -87,10 +88,30 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCenter() {
     switch (_phase) {
       case _Phase.idle:
-        return TapCircle(
+        return Column(
           key: const ValueKey('tap'),
-          accent: _palette.accent,
-          onTap: _startCountdown,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TapCircle(accent: _palette.accent, onTap: _startCountdown),
+            const SizedBox(height: 36),
+            ListenableBuilder(
+              listenable: LibraryStore.instance,
+              builder: (context, _) {
+                final store = LibraryStore.instance;
+                final text = store.isConnected
+                    ? '${store.anime.length} anime · ${store.manga.length} manga on your list'
+                    : 'Tap your profile icon to connect MyAnimeList';
+                return Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 14,
+                  ),
+                );
+              },
+            ),
+          ],
         );
       case _Phase.counting:
         return Countdown(
@@ -133,7 +154,13 @@ class _TopBar extends StatelessWidget {
               ),
             ),
           ),
-          ProfileAvatar(onTap: onProfileTap),
+          ListenableBuilder(
+            listenable: LibraryStore.instance,
+            builder: (context, _) => ProfileAvatar(
+              onTap: onProfileTap,
+              imageUrl: LibraryStore.instance.avatarUrl,
+            ),
+          ),
         ],
       ),
     );
