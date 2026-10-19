@@ -385,6 +385,24 @@ class FranchiseResolver {
           : '$shown$more',
     );
   }
+
+  /// The title of an alternative version (same story, other telling: an LN
+  /// vs its manga, a remake vs the original) of [id] that the user has
+  /// watched/read, or null.
+  Future<String?> watchedAlternative(
+    int id, {
+    required bool anime,
+    required bool Function(int malId) watched,
+  }) async {
+    final d = await _store.get(id, anime: anime);
+    if (d == null) return null;
+    for (final altId in d.relatedOfType({'alternative_version'})) {
+      if (!watched(altId)) continue;
+      final alt = await _store.get(altId, anime: anime);
+      return alt?.title ?? 'MAL #$altId';
+    }
+    return null;
+  }
 }
 
 class AdaptationRuntime {

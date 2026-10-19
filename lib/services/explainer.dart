@@ -21,6 +21,9 @@ class ExplainStep {
 class Explainer {
   final _resolver = FranchiseResolver();
 
+  /// The franchise entry the last explanation said the app would show.
+  int? _lastEntryId;
+
   /// Titles of the current kind (catalog + your list) matching [query].
   List<CatalogTitle> search(String query) {
     final q = query.trim().toLowerCase();
@@ -59,6 +62,7 @@ class Explainer {
     await DetailStore.instance.load();
     final steps = <ExplainStep>[];
     void add(bool? ok, String text) => steps.add(ExplainStep(ok, text));
+    _lastEntryId = null;
 
     final s = SettingsStore.instance;
     final anime = s.anime;
@@ -185,6 +189,7 @@ class Explainer {
           entry = m;
           break;
         }
+        _lastEntryId = entry?.malId;
         if (entry == null) {
           add(false, 'You\'ve completed every entry in the formats you have on.');
         } else {
@@ -212,6 +217,22 @@ class Explainer {
       }
     } on MalException catch (e) {
       add(false, 'Couldn\'t check the franchise: ${e.message}');
+    }
+
+    try {
+      // Check the entry the app would actually show.
+      final shownId = _lastEntryId ?? t.malId;
+      final alt = await _resolver.watchedAlternative(shownId,
+          anime: anime,
+          watched: (id) {
+            final x = statusOf(id);
+            return x == UserStatus.completed || x == UserStatus.current;
+          });
+      add(alt == null, alt == null
+          ? 'No alternative version you\'ve already seen.'
+          : 'You\'ve already seen the alternative version "$alt".');
+    } on MalException catch (e) {
+      add(null, 'Couldn\'t check alternative versions: ${e.message}');
     }
 
     if (!anime && s.skipAdapted) {

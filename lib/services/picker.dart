@@ -252,6 +252,11 @@ class Picker {
       if (!ctx.anime && await _mangaSkipped(cand.malId, ctx)) {
         return _Outcome(null, key);
       }
+      if (await _resolver.watchedAlternative(cand.malId,
+              anime: ctx.anime, watched: ctx.watched) !=
+          null) {
+        return _Outcome(null, key);
+      }
       if (!await _passesDonghua(cand, ctx)) return _Outcome(null, key);
       return _Outcome(await _withColor(cand, ctx), key);
     }
@@ -302,6 +307,11 @@ class Picker {
     }
 
     if (!ctx.anime && await _mangaSkipped(entry.malId, ctx)) {
+      return _Outcome(null, key);
+    }
+    if (await _resolver.watchedAlternative(entry.malId,
+            anime: ctx.anime, watched: ctx.watched) !=
+        null) {
       return _Outcome(null, key);
     }
 
