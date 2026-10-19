@@ -25,6 +25,13 @@ flutter pub get
 flutter run
 ```
 
+## App name and icon (once)
+
+```powershell
+dart run flutter_launcher_icons
+(Get-Content android\app\src\main\AndroidManifest.xml) -replace 'android:label="[^"]*"', 'android:label="Animanga Recommender"' | Set-Content android\app\src\main\AndroidManifest.xml
+```
+
 ## Milestones
 
 1. **Project + home screen** — Tap here circle, countdown, demo reveal, settings shell ✅
