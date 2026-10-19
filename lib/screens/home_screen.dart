@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/catalog_title.dart';
+import '../services/detail_store.dart';
 import '../services/library_store.dart';
 import '../services/mal_api.dart';
 import '../services/picker.dart';
@@ -41,7 +42,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
     Picker.instance.pick().then((result) {
       if (!mounted || tap != _tapId) return;
-      // Load the cover now so it's ready at the reveal.
+      // Load the cover and details now so they're ready at the reveal.
+      final picked = result.title;
+      if (picked != null) {
+        DetailStore.instance.extras(picked.malId, anime: picked.isAnime);
+      }
       final url = result.title?.pictureUrl;
       if (url != null) {
         precacheImage(

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/title_detail.dart';
+import '../models/title_extras.dart';
 import '../secrets.dart';
 import 'catalog_api.dart';
 import 'mal_api.dart';
@@ -33,6 +34,7 @@ class DetailStore {
   final Map<int, List<int>> _mangaAdaptations = {};
   final Map<String, List<int>> _otherVersions = {};
   final Map<String, Future<TitleDetail?>> _inFlight = {};
+  final Map<String, Future<TitleExtras?>> _extras = {};
 
   int _running = 0;
   final List<Completer<void>> _waiting = [];
@@ -292,5 +294,32 @@ class DetailStore {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Synopsis, genres and counts for the reveal card. Kept in memory only;
+  /// null if MAL can't be reached. Never throws.
+  Future<TitleExtras?> extras(int id, {required bool anime}) {
+    final key = _key(id, anime);
+    return _extras[key] ??= () async {
+      final kind = anime ? 'anime' : 'manga';
+      final fields = anime
+          ? 'synopsis,genres,num_episodes'
+          : 'synopsis,genres,num_chapters,num_volumes';
+      try {
+        final res = await _client.get(
+          Uri.parse('$_malBase/$kind/$id?fields=$fields'),
+          headers: {'X-MAL-CLIENT-ID': kMalClientId.trim()},
+        ).timeout(const Duration(seconds: 15));
+        if (res.statusCode != 200) {
+          _extras.remove(key);
+          return null;
+        }
+        return TitleExtras.fromMal(
+            jsonDecode(res.body) as Map<String, dynamic>);
+      } catch (_) {
+        _extras.remove(key);
+        return null;
+      }
+    }();
   }
 }

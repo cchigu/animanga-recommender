@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/catalog_title.dart';
+import '../models/title_extras.dart';
+import '../services/detail_store.dart';
 import '../services/mal_api.dart';
 import '../services/picker.dart';
 
@@ -127,6 +130,7 @@ class TitleCard extends StatelessWidget {
                         ),
                     ],
                   ),
+                  _Details(title: title, accent: accent),
                 ],
               ),
             ),
@@ -139,7 +143,27 @@ class TitleCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _openOnMal(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(color: accent, width: 1.5),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 22, vertical: 16),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Open on MAL'),
+                ),
+                FilledButton.icon(
               onPressed: onAgain,
               style: FilledButton.styleFrom(
                 backgroundColor: accent,
@@ -154,9 +178,144 @@ class TitleCard extends StatelessWidget {
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Pick another'),
             ),
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+extension on TitleCard {
+  Future<void> _openOnMal(BuildContext context) async {
+    final kind = title.isAnime ? 'anime' : 'manga';
+    final url = Uri.parse('https://myanimelist.net/$kind/${title.malId}');
+    final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Couldn\'t open MyAnimeList.')),
+      );
+    }
+  }
+}
+
+/// Synopsis, genres and episode/chapter counts, loaded from MAL.
+class _Details extends StatefulWidget {
+  final CatalogTitle title;
+  final Color accent;
+  const _Details({required this.title, required this.accent});
+
+  @override
+  State<_Details> createState() => _DetailsState();
+}
+
+class _DetailsState extends State<_Details> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = widget.title;
+    final muted = Colors.white.withValues(alpha: 0.7);
+    return FutureBuilder<TitleExtras?>(
+      future: DetailStore.instance.extras(t.malId, anime: t.isAnime),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 16),
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final x = snap.data;
+        if (x == null) return const SizedBox.shrink();
+
+        final counts = <String>[
+          if (t.isAnime && x.episodes > 0)
+            '${x.episodes} episode${x.episodes == 1 ? '' : 's'}',
+          if (!t.isAnime && x.volumes > 0)
+            '${x.volumes} volume${x.volumes == 1 ? '' : 's'}',
+          if (!t.isAnime && x.chapters > 0)
+            '${x.chapters} chapter${x.chapters == 1 ? '' : 's'}',
+        ];
+
+        return Column(
+          children: [
+            if (counts.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                counts.join(' · '),
+                style: TextStyle(color: muted, fontSize: 14),
+              ),
+            ],
+            if (x.genres.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.center,
+                children: [
+                  for (final g in x.genres.take(6))
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: widget.accent.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        g,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (x.synopsis != null) ...[
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 250),
+                  alignment: Alignment.topCenter,
+                  child: Column(
+                    children: [
+                      Text(
+                        x.synopsis!,
+                        maxLines: _expanded ? null : 4,
+                        overflow: _expanded
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 14.5,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _expanded ? 'Show less' : 'Read more',
+                        style: TextStyle(
+                          color: widget.accent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

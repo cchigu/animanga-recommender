@@ -2,7 +2,7 @@ name: animanga_recommender
 description: "Animanga Recommender - one tap, one anime or manga pick from your MyAnimeList data."
 publish_to: 'none'
 
-version: 0.6.0+6
+version: 0.7.0+7
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -14,6 +14,7 @@ dependencies:
   http: ^1.2.2
   shared_preferences: ^2.3.3
   path_provider: ^2.1.4
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

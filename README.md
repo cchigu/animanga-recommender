@@ -33,5 +33,5 @@ flutter run
 4. **Settings** — all recommendation settings, saved on the phone ✅
 5. **Picker engine** — exclusions, Plan to Watch/Read, best score / weighted (score − 5)⁴ / random, format filters ✅
 6. **Franchise logic** — strict "completed" chain check and first major entry ✅
-7. **Reveal polish** — cover art, background from cover color, details, Open on MAL
+7. **Reveal polish** — cover art, background from cover color, details, Open on MAL ✅
 8. **Final polish** — app icon, loading and error states
