@@ -18,6 +18,9 @@ class DetailStore {
   static final DetailStore instance = DetailStore._();
 
   static const _file = 'title_details.json';
+
+  /// Bumped when the cached fields change; older caches are discarded.
+  static const _version = 2;
   static const _malBase = 'https://api.myanimelist.net/v2';
   static const _maxParallel = 3;
 
@@ -47,6 +50,7 @@ class DetailStore {
       final f = await _path();
       if (!await f.exists()) return;
       final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      if (j['v'] != _version) return; // older format: start fresh
       for (final e in (j['d'] as List? ?? const [])) {
         final d = TitleDetail.fromJson(e as Map<String, dynamic>);
         _details[_key(d.malId, d.isAnime)] = d;
@@ -70,6 +74,7 @@ class DetailStore {
       try {
         final f = await _path();
         await f.writeAsString(jsonEncode({
+          'v': _version,
           'd': [for (final d in _details.values) d.toJson()],
           'al': {
             for (final e in _aniInfo.entries)
@@ -110,7 +115,7 @@ class DetailStore {
   Future<TitleDetail?> _fetch(int id, bool anime, TitleDetail? stale) async {
     final kind = anime ? 'anime' : 'manga';
     final fields = 'id,title,alternative_titles,main_picture,mean,media_type,'
-        'status,start_date,${anime ? 'related_anime' : 'related_manga'}';
+        'status,start_date,end_date,${anime ? 'related_anime' : 'related_manga'}';
     await _acquire();
     try {
       final res = await _client.get(

@@ -11,8 +11,16 @@ class Franchise {
   /// Stable id for "have we shown this franchise already?": the lowest MAL id.
   int get key => members.map((m) => m.malId).reduce((a, b) => a < b ? a : b);
 
+  /// An anime franchise whose latest main entry ended this recently counts
+  /// as ongoing, since a sequel is likely even if none is announced yet.
+  static const recentEndWindow = Duration(days: 4 * 365 + 1);
+
+  /// Formats that don't count as "the latest entry" for that rule.
+  static const _minorTypes = {'special', 'tv_special', 'music', 'cm', 'pv'};
+
   /// Release status of the whole chain:
   /// anything still airing/publishing or announced → ongoing,
+  /// otherwise (anime) the latest entry ended within 4 years → ongoing,
   /// otherwise anything on hiatus/discontinued → hiatus,
   /// otherwise → completed.
   Completion get completion {
@@ -29,7 +37,24 @@ class Franchise {
           hiatus = true;
       }
     }
+    if (endedRecently) return Completion.ongoing;
     return hiatus ? Completion.hiatus : Completion.completed;
+  }
+
+  /// True for anime whose latest TV/ONA/movie/OVA entry ended in the last
+  /// 4 years.
+  bool get endedRecently {
+    if (members.isEmpty || !members.first.isAnime) return false;
+    DateTime? latest;
+    for (final m in members) {
+      if (_minorTypes.contains(m.mediaType)) continue;
+      final end = m.endedOn;
+      if (end != null && (latest == null || end.isAfter(latest))) {
+        latest = end;
+      }
+    }
+    if (latest == null) return false;
+    return DateTime.now().difference(latest) < recentEndWindow;
   }
 
   /// Released members, earliest first.

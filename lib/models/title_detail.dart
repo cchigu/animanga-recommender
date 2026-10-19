@@ -22,6 +22,7 @@ class TitleDetail {
   final String mediaType;
   final String releaseStatus;
   final String? startDate;
+  final String? endDate;
   final double? malScore;
   final String? pictureUrl;
   final List<Relation> relations;
@@ -35,6 +36,7 @@ class TitleDetail {
     required this.mediaType,
     required this.releaseStatus,
     this.startDate,
+    this.endDate,
     this.malScore,
     this.pictureUrl,
     required this.relations,
@@ -52,6 +54,22 @@ class TitleDetail {
       isFinished ? const Duration(days: 30) : const Duration(days: 3);
 
   bool get isStale => DateTime.now().difference(fetched) > maxAge;
+
+  /// When this title ended (or started, if MAL has no end date), taking
+  /// the last day of a partial date like "2021" or "2021-06".
+  DateTime? get endedOn => _lastDayOf(endDate) ?? _lastDayOf(startDate);
+
+  static DateTime? _lastDayOf(String? d) {
+    if (d == null || d.isEmpty) return null;
+    final p = d.split('-').map(int.tryParse).toList();
+    final y = p.isNotEmpty ? p[0] : null;
+    if (y == null) return null;
+    final m = p.length > 1 ? p[1] : null;
+    final day = p.length > 2 ? p[2] : null;
+    if (m == null) return DateTime(y, 12, 31);
+    if (day == null) return DateTime(y, m + 1, 0); // last day of month m
+    return DateTime(y, m, day);
+  }
 
   Iterable<int> relatedOfType(Set<String> types) =>
       relations.where((r) => types.contains(r.type)).map((r) => r.id);
@@ -81,6 +99,7 @@ class TitleDetail {
       mediaType: j['media_type'] as String? ?? 'unknown',
       releaseStatus: j['status'] as String? ?? 'unknown',
       startDate: j['start_date'] as String?,
+      endDate: j['end_date'] as String?,
       malScore: (j['mean'] as num?)?.toDouble(),
       pictureUrl: (picture?['large'] ?? picture?['medium']) as String?,
       relations: [
@@ -103,6 +122,7 @@ class TitleDetail {
         'type': mediaType,
         'rel': releaseStatus,
         if (startDate != null) 'start': startDate,
+        if (endDate != null) 'end': endDate,
         if (malScore != null) 'mean': malScore,
         if (pictureUrl != null) 'pic': pictureUrl,
         'r': [for (final r in relations) r.toJson()],
@@ -117,6 +137,7 @@ class TitleDetail {
         mediaType: j['type'] as String,
         releaseStatus: j['rel'] as String,
         startDate: j['start'] as String?,
+        endDate: j['end'] as String?,
         malScore: (j['mean'] as num?)?.toDouble(),
         pictureUrl: j['pic'] as String?,
         relations: [
