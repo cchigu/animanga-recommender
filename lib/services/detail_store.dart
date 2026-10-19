@@ -56,7 +56,9 @@ class DetailStore {
         final d = TitleDetail.fromJson(e as Map<String, dynamic>);
         _details[_key(d.malId, d.isAnime)] = d;
       }
-      final src = j['src'] as Map<String, dynamic>? ?? const {};
+      final src = j['srcv'] == 2
+          ? j['src'] as Map<String, dynamic>? ?? const {}
+          : const <String, dynamic>{};
       src.forEach((k, v) {
         final id = int.tryParse(k);
         if (id != null) {
@@ -84,6 +86,7 @@ class DetailStore {
         await f.writeAsString(jsonEncode({
           'v': _version,
           'd': [for (final d in _details.values) d.toJson()],
+          'srcv': 2,
           'src': {
             for (final e in _aniSource.entries) '${e.key}': e.value.toJson(),
           },
@@ -186,5 +189,48 @@ class DetailStore {
       _scheduleSave();
     }
     return found;
+  }
+
+  static final _mangaLink = RegExp(r'myanimelist\.net/manga/(\d+)');
+
+  /// Last resort for anime the API won't link to a source: reads the
+  /// "Adaptation" entry off the anime's MAL page. Returns MAL manga ids
+  /// (empty if none found); never throws.
+  Future<List<int>> scrapeAdaptations(int animeMalId) async {
+    try {
+      final res = await _client.get(
+        Uri.parse('https://myanimelist.net/anime/$animeMalId'),
+        headers: MalApi.imageHeaders,
+      ).timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return const [];
+      final html = res.body;
+      final ids = <int>{};
+      var from = 0;
+      while (true) {
+        final at = html.indexOf('Adaptation', from);
+        if (at < 0) break;
+        from = at + 10;
+        // The manga's link sits right next to its "Adaptation" label, in
+        // both MAL's tile layout and its older table layout.
+        final start = (at - 900).clamp(0, html.length);
+        final end = (at + 900).clamp(0, html.length);
+        final window = html.substring(start, end);
+        // Nearest link to the label wins.
+        int? best;
+        var bestDist = 1 << 30;
+        for (final m in _mangaLink.allMatches(window)) {
+          final dist = ((start + m.start) - at).abs();
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = int.tryParse(m.group(1)!);
+          }
+        }
+        if (best != null) ids.add(best);
+        if (ids.length >= 4) break;
+      }
+      return ids.toList();
+    } catch (_) {
+      return const [];
+    }
   }
 }

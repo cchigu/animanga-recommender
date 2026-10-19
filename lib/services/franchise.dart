@@ -158,49 +158,60 @@ class FranchiseResolver {
               '(${_ymd(animeEnd)}).';
     }
 
-    // 1. MAL's adaptation links.
-    final sourceIds = <int>{for (final m in mains) ...m.adaptedFrom};
-    if (sourceIds.isNotEmpty) {
+    // The work an anime adapts, judged against the anime's last episode.
+    Future<(bool, String)?> judgeMalSources(Set<int> ids, String via) async {
       try {
         final sources = [
           for (final s in await Future.wait(
-            sourceIds.take(4).map((id) => _store.get(id, anime: false)),
+            ids.take(4).map((id) => _store.get(id, anime: false)),
           ))
             if (s != null) s,
         ];
-        if (sources.isNotEmpty) {
-          // The original work started first (an LN before its manga).
-          sources.sort((a, b) => a.sortDate.compareTo(b.sortDate));
-          final original = sources.first;
-          final end = original.endedOn;
-          final full = original.isFinished &&
-              end != null &&
-              !animeEnd.isBefore(end);
-          return (full, 'Source "${original.title}" (MAL): '
-              '${verdict(original.isFinished, end, 'it')}');
-        }
+        if (sources.isEmpty) return null;
+        // The original work started first (an LN before its manga).
+        sources.sort((a, b) => a.sortDate.compareTo(b.sortDate));
+        final original = sources.first;
+        final end = original.endedOn;
+        final full =
+            original.isFinished && end != null && !animeEnd.isBefore(end);
+        return (full, 'Source "${original.title}" ($via): '
+            '${verdict(original.isFinished, end, 'it')}');
       } catch (_) {
-        // Fall through to AniList.
+        return null;
       }
     }
 
-    // 2. AniList, which links sources more reliably.
+    // 1. MAL API adaptation links (often missing for anime).
+    final apiIds = <int>{for (final m in mains) ...m.adaptedFrom};
+    if (apiIds.isNotEmpty) {
+      final r = await judgeMalSources(apiIds, 'MAL');
+      if (r != null) return r;
+    }
+
+    // 2. AniList.
     final ani = await _store.aniListSource(mains.first.malId);
-    if (ani == null) {
-      return (false, 'MAL lists no source and AniList couldn\'t be reached.');
+    if (ani != null) {
+      if (ani.sourceType == 'ORIGINAL') {
+        return (true, 'Anime original (AniList), so nothing is left to adapt.');
+      }
+      if (ani.hasSourceWork) {
+        final full = ani.sourceFinished &&
+            ani.sourceEnd != null &&
+            !animeEnd.isBefore(ani.sourceEnd!);
+        return (full, 'Source "${ani.sourceTitle ?? '?'}" (AniList): '
+            '${verdict(ani.sourceFinished, ani.sourceEnd, 'it')}');
+      }
     }
-    if (ani.sourceType == 'ORIGINAL') {
-      return (true, 'Anime original (AniList), so nothing is left to adapt.');
+
+    // 3. The "Adaptation" entry on the MAL anime page.
+    final scraped = await _store.scrapeAdaptations(mains.first.malId);
+    if (scraped.isNotEmpty) {
+      final r = await judgeMalSources(scraped.toSet(), 'MAL page');
+      if (r != null) return r;
     }
-    if (!ani.hasSourceWork) {
-      return (false, 'Neither MAL nor AniList links a source work '
-          '(source type: ${ani.sourceType ?? 'unknown'}).');
-    }
-    final full = ani.sourceFinished &&
-        ani.sourceEnd != null &&
-        !animeEnd.isBefore(ani.sourceEnd!);
-    return (full, 'Source "${ani.sourceTitle ?? '?'}" (AniList): '
-        '${verdict(ani.sourceFinished, ani.sourceEnd, 'it')}');
+
+    return (false, 'Couldn\'t find the source work on MAL or AniList'
+        '${ani == null ? ' (AniList unreachable)' : ' (source type: ${ani.sourceType ?? 'unknown'})'}.');
   }
 
   static String _ymd(DateTime d) =>

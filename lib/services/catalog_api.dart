@@ -179,7 +179,7 @@ query ($id: Int) {
     source
     relations {
       edges {
-        relationType
+        relationType(version: 2)
         node {
           type
           status
@@ -230,7 +230,12 @@ query ($id: Int) {
       Map? best;
       String? bestStart;
       for (final e in edges) {
-        if (e is! Map || e['relationType'] != 'SOURCE') continue;
+        // Version 2 labels the source "SOURCE"; older data may say
+        // "ADAPTATION". From an anime, either one pointing at a manga/LN
+        // is the work it adapts.
+        if (e is! Map) continue;
+        final rel = e['relationType'];
+        if (rel != 'SOURCE' && rel != 'ADAPTATION') continue;
         final node = e['node'];
         if (node is! Map || node['type'] != 'MANGA') continue;
         final start = _dateKey(node['startDate'] as Map?);
