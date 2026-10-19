@@ -459,10 +459,6 @@ class FranchiseResolver {
 
     final watchedOne =
         members.values.where((m) => seen(m.malId)).firstOrNull;
-    if (watchedOne != null) {
-      return UnwatchedAnimeCheck(UnwatchedStatus.watchedSome,
-          'You\'ve seen some of the anime ("${watchedOne.title}").');
-    }
 
     final name = (members.values.toList()
           ..sort((a, b) => a.sortDate.compareTo(b.sortDate)))
@@ -481,17 +477,42 @@ class FranchiseResolver {
     // Fully adapted: the manga finished and the anime caught up to it.
     final manga = await _store.get(mangaId, anime: false);
     final mangaEnd = manga?.endedOn;
-    if (upcoming.isEmpty &&
+    final fullyAdapted = upcoming.isEmpty &&
         manga != null &&
         manga.isFinished &&
         mangaEnd != null &&
         latest != null &&
-        coversSource(latest, mangaEnd)) {
-      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedOk,
-          'Unwatched anime "$name" fully adapts it (anime ended '
-          '${_ymd(latest)}, manga ${_ymd(mangaEnd)}).');
+        coversSource(latest, mangaEnd);
+    final dead = upcoming.isEmpty &&
+        latest != null &&
+        DateTime.now().difference(latest) >= Franchise.recentEndWindow;
+    final ended = latest == null ? '' : 'ended ${_ymd(latest)}';
+
+    // You've seen part of the anime: keep watching while more anime is
+    // likely; read the manga only once the anime is done for good and the
+    // manga goes further than it.
+    if (watchedOne != null) {
+      final seenName = watchedOne.title;
+      if (fullyAdapted) {
+        return UnwatchedAnimeCheck(UnwatchedStatus.watchedSomeBlocked,
+            'You\'ve started "$seenName", and the anime covers the whole '
+            'manga, so finish the anime instead.');
+      }
+      if (dead) {
+        return UnwatchedAnimeCheck(UnwatchedStatus.watchedSomeOk,
+            'You\'ve seen some of the anime ("$seenName"); it $ended, over 6 '
+            'years ago, and the manga goes further.');
+      }
+      return UnwatchedAnimeCheck(UnwatchedStatus.watchedSomeBlocked,
+          'You\'ve seen some of the anime ("$seenName") and more is likely: '
+          '${upcoming.isNotEmpty ? '"${upcoming.first.title}" is airing or announced' : 'it $ended, within 6 years'}.');
     }
 
+    if (fullyAdapted) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedOk,
+          'Unwatched anime "$name" fully adapts it (anime ${_ymd(latest!)}, '
+          'manga ${_ymd(mangaEnd!)}).');
+    }
     if (upcoming.isNotEmpty) {
       return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
           'Unwatched anime "$name" has more airing or announced '
@@ -501,20 +522,21 @@ class FranchiseResolver {
       return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
           'Unwatched anime "$name" has no end date.');
     }
-    if (DateTime.now().difference(latest) >= Franchise.recentEndWindow) {
+    if (dead) {
       return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedOk,
-          'Unwatched anime "$name" ended ${_ymd(latest)}, over 6 years ago, '
-          'with nothing new announced.');
+          'Unwatched anime "$name" $ended, over 6 years ago, with nothing '
+          'new announced.');
     }
     return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
-        'Unwatched anime "$name" ended ${_ymd(latest)}, within 6 years, '
-        'without covering the whole manga, so more may come.');
+        'Unwatched anime "$name" $ended, within 6 years, without covering '
+        'the whole manga, so more may come.');
   }
 }
 
 enum UnwatchedStatus {
   noAnime, // no real anime adaptation
-  watchedSome, // you've seen at least part of it
+  watchedSomeOk, // you've seen part; the anime is long dead, manga goes on
+  watchedSomeBlocked, // you've seen part; keep watching the anime instead
   unwatchedOk, // unwatched, but fully adapted or long dead
   unwatchedBlocked, // unwatched, and more anime may come
 }

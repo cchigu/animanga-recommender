@@ -336,11 +336,12 @@ class Picker {
       final check = await _resolver.unwatchedAnime(mangaId, seen: ctx.seen);
       switch (check.status) {
         case UnwatchedStatus.unwatchedBlocked:
+        case UnwatchedStatus.watchedSomeBlocked:
           return true;
         case UnwatchedStatus.unwatchedOk:
           if (!ctx.settings.includeUnwatchedAnime) return true;
         case UnwatchedStatus.noAnime:
-        case UnwatchedStatus.watchedSome:
+        case UnwatchedStatus.watchedSomeOk:
           break;
       }
     }

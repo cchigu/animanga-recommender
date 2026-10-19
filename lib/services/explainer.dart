@@ -252,7 +252,8 @@ class Explainer {
             seen: started.contains);
         final bool? ok = switch (check.status) {
           UnwatchedStatus.noAnime => null,
-          UnwatchedStatus.watchedSome => null,
+          UnwatchedStatus.watchedSomeOk => true,
+          UnwatchedStatus.watchedSomeBlocked => false,
           UnwatchedStatus.unwatchedOk => s.includeUnwatchedAnime,
           UnwatchedStatus.unwatchedBlocked => false,
         };
