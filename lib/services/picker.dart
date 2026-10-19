@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/catalog_title.dart';
 import '../models/list_entry.dart';
 import '../models/title_detail.dart';
@@ -37,8 +39,11 @@ class Picker {
   static final Picker instance = Picker._();
 
   /// Give up after this many candidates or this long.
-  static const _maxTries = 80;
-  static const _timeBudget = Duration(seconds: 40);
+  static const _maxTries = 150;
+  static const _timeBudget = Duration(seconds: 60);
+
+  /// Franchises checked so far for the current tap, for the spinner.
+  final ValueNotifier<int> checked = ValueNotifier(0);
 
   final _rng = Random();
   final _resolver = FranchiseResolver();
@@ -160,6 +165,7 @@ class Picker {
     final started = DateTime.now();
     var tries = 0;
     var skippedAsShown = 0;
+    checked.value = 0;
     String? lastError;
 
     for (final cand in ordered) {
@@ -172,6 +178,7 @@ class Picker {
         continue;
       }
       tries++;
+      checked.value = tries;
       try {
         final outcome = await _resolve(cand, ctx, tried);
         if (outcome.franchiseKey != null &&

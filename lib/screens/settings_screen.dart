@@ -5,6 +5,7 @@ import '../services/catalog_store.dart';
 import '../services/library_store.dart';
 import '../services/settings_store.dart';
 import '../widgets/profile_avatar.dart';
+import 'explain_screen.dart';
 
 /// Settings: the MAL account (Milestone 2) and the recommendation settings,
 /// which become real controls in Milestone 4.
@@ -42,6 +43,18 @@ class SettingsScreen extends StatelessWidget {
             'Completed, watching, on-hold, and dropped titles are always excluded.',
             textAlign: TextAlign.center,
             style: TextStyle(color: muted, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.manage_search_rounded),
+              title: const Text('Why wasn\'t this picked?'),
+              subtitle: const Text('Check any title against your settings'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ExplainScreen()),
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           const _SectionHeader('Catalog'),

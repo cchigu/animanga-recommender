@@ -29,6 +29,7 @@ class DetailStore {
 
   final Map<String, TitleDetail> _details = {};
   final Map<String, AniListInfo> _aniInfo = {};
+  final Map<int, AniListSource> _aniSource = {};
   final Map<String, Future<TitleDetail?>> _inFlight = {};
 
   int _running = 0;
@@ -55,6 +56,13 @@ class DetailStore {
         final d = TitleDetail.fromJson(e as Map<String, dynamic>);
         _details[_key(d.malId, d.isAnime)] = d;
       }
+      final src = j['src'] as Map<String, dynamic>? ?? const {};
+      src.forEach((k, v) {
+        final id = int.tryParse(k);
+        if (id != null) {
+          _aniSource[id] = AniListSource.fromJson(v as Map<String, dynamic>);
+        }
+      });
       final ani = j['al'] as Map<String, dynamic>? ?? const {};
       ani.forEach((k, v) {
         final m = v as Map<String, dynamic>;
@@ -76,6 +84,9 @@ class DetailStore {
         await f.writeAsString(jsonEncode({
           'v': _version,
           'd': [for (final d in _details.values) d.toJson()],
+          'src': {
+            for (final e in _aniSource.entries) '${e.key}': e.value.toJson(),
+          },
           'al': {
             for (final e in _aniInfo.entries)
               e.key: {'cc': e.value.country, 'col': e.value.coverColor},
@@ -162,5 +173,18 @@ class DetailStore {
     } catch (_) {
       return null;
     }
+  }
+
+  /// What an anime adapts, according to AniList (cached). Null when AniList
+  /// can't be reached; never throws.
+  Future<AniListSource?> aniListSource(int animeMalId) async {
+    final cached = _aniSource[animeMalId];
+    if (cached != null) return cached;
+    final found = await _aniList.aniListSource(animeMalId);
+    if (found != null) {
+      _aniSource[animeMalId] = found;
+      _scheduleSave();
+    }
+    return found;
   }
 }

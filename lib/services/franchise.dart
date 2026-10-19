@@ -13,6 +13,9 @@ class Franchise {
   /// coming.
   bool fullyAdapted = false;
 
+  /// How [fullyAdapted] was decided, for the "Why wasn't this picked?" tool.
+  String? adaptationNote;
+
   /// Stable id for "have we shown this franchise already?": the lowest MAL id.
   int get key => members.map((m) => m.malId).reduce((a, b) => a < b ? a : b);
 
@@ -123,7 +126,9 @@ class FranchiseResolver {
     if (members.isEmpty) return null;
     final franchise = Franchise(members);
     if (franchise.endedRecently) {
-      franchise.fullyAdapted = await _isFullyAdapted(franchise);
+      final (full, note) = await _isFullyAdapted(franchise);
+      franchise.fullyAdapted = full;
+      franchise.adaptationNote = note;
     }
     return franchise;
   }
@@ -133,36 +138,74 @@ class FranchiseResolver {
   /// - its source manga / light novel has finished, and the anime's last
   ///   main entry ended on or after the source's last release.
   /// Unknown or unreachable sources count as not fully adapted.
-  Future<bool> _isFullyAdapted(Franchise f) async {
+  /// Returns the verdict and a short note on how it was reached.
+  Future<(bool, String)> _isFullyAdapted(Franchise f) async {
     final mains = f.mainByDate;
-    if (mains.isEmpty) return false;
-    if (mains.first.source == 'original') return true;
-
-    final sourceIds = <int>{for (final m in mains) ...m.adaptedFrom};
-    if (sourceIds.isEmpty) return false;
-
-    try {
-      final sources = [
-        for (final s in await Future.wait(
-          sourceIds.take(4).map((id) => _store.get(id, anime: false)),
-        ))
-          if (s != null) s,
-      ];
-      if (sources.isEmpty) return false;
-      // The original work is the one that started first (an LN before its
-      // manga adaptation, for example).
-      sources.sort((a, b) => a.sortDate.compareTo(b.sortDate));
-      final original = sources.first;
-      if (!original.isFinished) return false;
-
-      final sourceEnd = original.endedOn;
-      final animeEnd = f.latestMainEnd;
-      if (sourceEnd == null || animeEnd == null) return false;
-      return !animeEnd.isBefore(sourceEnd);
-    } catch (_) {
-      return false;
+    if (mains.isEmpty) return (false, 'No main entries to compare.');
+    final animeEnd = f.latestMainEnd;
+    if (animeEnd == null) return (false, 'No end date on MAL.');
+    if (mains.first.source == 'original') {
+      return (true, 'Anime original (MAL), so nothing is left to adapt.');
     }
+
+    String verdict(bool finished, DateTime? sourceEnd, String what) {
+      if (!finished) return '$what is still running.';
+      if (sourceEnd == null) return '$what has no end date.';
+      return animeEnd.isBefore(sourceEnd)
+          ? '$what ended ${_ymd(sourceEnd)}, after the anime '
+              '(${_ymd(animeEnd)}).'
+          : '$what ended ${_ymd(sourceEnd)}; the anime finished after it '
+              '(${_ymd(animeEnd)}).';
+    }
+
+    // 1. MAL's adaptation links.
+    final sourceIds = <int>{for (final m in mains) ...m.adaptedFrom};
+    if (sourceIds.isNotEmpty) {
+      try {
+        final sources = [
+          for (final s in await Future.wait(
+            sourceIds.take(4).map((id) => _store.get(id, anime: false)),
+          ))
+            if (s != null) s,
+        ];
+        if (sources.isNotEmpty) {
+          // The original work started first (an LN before its manga).
+          sources.sort((a, b) => a.sortDate.compareTo(b.sortDate));
+          final original = sources.first;
+          final end = original.endedOn;
+          final full = original.isFinished &&
+              end != null &&
+              !animeEnd.isBefore(end);
+          return (full, 'Source "${original.title}" (MAL): '
+              '${verdict(original.isFinished, end, 'it')}');
+        }
+      } catch (_) {
+        // Fall through to AniList.
+      }
+    }
+
+    // 2. AniList, which links sources more reliably.
+    final ani = await _store.aniListSource(mains.first.malId);
+    if (ani == null) {
+      return (false, 'MAL lists no source and AniList couldn\'t be reached.');
+    }
+    if (ani.sourceType == 'ORIGINAL') {
+      return (true, 'Anime original (AniList), so nothing is left to adapt.');
+    }
+    if (!ani.hasSourceWork) {
+      return (false, 'Neither MAL nor AniList links a source work '
+          '(source type: ${ani.sourceType ?? 'unknown'}).');
+    }
+    final full = ani.sourceFinished &&
+        ani.sourceEnd != null &&
+        !animeEnd.isBefore(ani.sourceEnd!);
+    return (full, 'Source "${ani.sourceTitle ?? '?'}" (AniList): '
+        '${verdict(ani.sourceFinished, ani.sourceEnd, 'it')}');
   }
+
+  static String _ymd(DateTime d) =>
+      '${d.year}-${'${d.month}'.padLeft(2, '0')}-${'${d.day}'.padLeft(2, '0')}';
+
 
   /// Like [chainOf], but if the chain is a side story (e.g. an OVA whose
   /// parent lists it as a side story), returns the parent's chain instead.

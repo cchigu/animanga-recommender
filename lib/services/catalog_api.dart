@@ -14,6 +14,44 @@ class AniListInfo {
   const AniListInfo(this.country, this.coverColor);
 }
 
+/// The source an anime adapts, according to AniList.
+class AniListSource {
+  /// AniList's source type: ORIGINAL, MANGA, LIGHT_NOVEL, WEB_NOVEL...
+  final String? sourceType;
+
+  /// The source work itself, when AniList links one.
+  final bool hasSourceWork;
+  final bool sourceFinished;
+  final DateTime? sourceEnd;
+  final String? sourceTitle;
+
+  const AniListSource({
+    this.sourceType,
+    this.hasSourceWork = false,
+    this.sourceFinished = false,
+    this.sourceEnd,
+    this.sourceTitle,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'st': sourceType,
+        'has': hasSourceWork,
+        'fin': sourceFinished,
+        'end': sourceEnd?.millisecondsSinceEpoch,
+        'tt': sourceTitle,
+      };
+
+  factory AniListSource.fromJson(Map<String, dynamic> j) => AniListSource(
+        sourceType: j['st'] as String?,
+        hasSourceWork: j['has'] as bool? ?? false,
+        sourceFinished: j['fin'] as bool? ?? false,
+        sourceEnd: j['end'] == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(j['end'] as int),
+        sourceTitle: j['tt'] as String?,
+      );
+}
+
 /// Fetches the candidate pool: MAL's score ranking, then AniList details.
 class CatalogApi {
   static const _malBase = 'https://api.myanimelist.net/v2';
@@ -133,6 +171,102 @@ query ($ids: [Int], $type: MediaType) {
       return out;
     }
     throw const MalException('AniList kept rate limiting. Try again later.');
+  }
+
+  static const _sourceQuery = r'''
+query ($id: Int) {
+  Media(idMal: $id, type: ANIME) {
+    source
+    relations {
+      edges {
+        relationType
+        node {
+          type
+          status
+          title { romaji english }
+          startDate { year month day }
+          endDate { year month day }
+        }
+      }
+    }
+  }
+}''';
+
+  /// What an anime adapts, from AniList. Null when AniList can't be reached
+  /// or doesn't know the title.
+  Future<AniListSource?> aniListSource(int malId) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final http.Response res;
+      try {
+        res = await _client
+            .post(
+              Uri.parse(_aniList),
+              headers: const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'query': _sourceQuery,
+                'variables': {'id': malId},
+              }),
+            )
+            .timeout(_timeout);
+      } catch (_) {
+        return null;
+      }
+      _learnRateLimit(res);
+      if (res.statusCode == 429) {
+        final wait = int.tryParse(res.headers['retry-after'] ?? '') ?? 30;
+        await Future.delayed(Duration(seconds: wait + 1));
+        continue;
+      }
+      if (res.statusCode != 200) return null;
+
+      final media = ((jsonDecode(res.body) as Map)['data'] as Map?)?['Media'];
+      if (media is! Map) return null;
+      final edges = (media['relations'] as Map?)?['edges'] as List? ?? [];
+
+      // Prefer the earliest-started SOURCE work (an LN over its manga).
+      Map? best;
+      String? bestStart;
+      for (final e in edges) {
+        if (e is! Map || e['relationType'] != 'SOURCE') continue;
+        final node = e['node'];
+        if (node is! Map || node['type'] != 'MANGA') continue;
+        final start = _dateKey(node['startDate'] as Map?);
+        if (best == null || start.compareTo(bestStart!) < 0) {
+          best = node;
+          bestStart = start;
+        }
+      }
+      final title = best?['title'] as Map?;
+      return AniListSource(
+        sourceType: media['source'] as String?,
+        hasSourceWork: best != null,
+        sourceFinished: best?['status'] == 'FINISHED',
+        sourceEnd: _lastDay(best?['endDate'] as Map?),
+        sourceTitle: (title?['english'] ?? title?['romaji']) as String?,
+      );
+    }
+    return null;
+  }
+
+  static String _dateKey(Map? d) {
+    final y = d?['year'] as int?;
+    if (y == null) return '9999';
+    final m = (d?['month'] as int?) ?? 0;
+    final day = (d?['day'] as int?) ?? 0;
+    return '$y-${'$m'.padLeft(2, '0')}-${'$day'.padLeft(2, '0')}';
+  }
+
+  static DateTime? _lastDay(Map? d) {
+    final y = d?['year'] as int?;
+    if (y == null) return null;
+    final m = d?['month'] as int?;
+    final day = d?['day'] as int?;
+    if (m == null) return DateTime(y, 12, 31);
+    if (day == null) return DateTime(y, m + 1, 0);
+    return DateTime(y, m, day);
   }
 
   void _learnRateLimit(http.Response res) {

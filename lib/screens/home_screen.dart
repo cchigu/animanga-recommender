@@ -180,11 +180,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              'Checking franchises…',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
-                fontSize: 16,
+            ValueListenableBuilder<int>(
+              valueListenable: Picker.instance.checked,
+              builder: (context, n, _) => Text(
+                n <= 1 ? 'Checking franchises…' : 'Checked $n franchises…',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: 16,
+                ),
               ),
             ),
             const SizedBox(height: 6),
