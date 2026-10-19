@@ -6,7 +6,12 @@ import 'settings_store.dart';
 /// sequel/prequel relations. Spin-offs and side stories are not part of it.
 class Franchise {
   final List<TitleDetail> members;
-  const Franchise(this.members);
+  Franchise(this.members);
+
+  /// Set by [FranchiseResolver]: the anime has fully adapted its source
+  /// (or is an anime original), so a recent ending doesn't mean more is
+  /// coming.
+  bool fullyAdapted = false;
 
   /// Stable id for "have we shown this franchise already?": the lowest MAL id.
   int get key => members.map((m) => m.malId).reduce((a, b) => a < b ? a : b);
@@ -20,7 +25,8 @@ class Franchise {
 
   /// Release status of the whole chain:
   /// anything still airing/publishing or announced → ongoing,
-  /// otherwise (anime) the latest entry ended within 6 years → ongoing,
+  /// otherwise (anime) the latest entry ended within 6 years and the source
+  /// isn't fully adapted → ongoing,
   /// otherwise anything on hiatus/discontinued → hiatus,
   /// otherwise → completed.
   Completion get completion {
@@ -37,7 +43,7 @@ class Franchise {
           hiatus = true;
       }
     }
-    if (endedRecently) return Completion.ongoing;
+    if (endedRecently && !fullyAdapted) return Completion.ongoing;
     return hiatus ? Completion.hiatus : Completion.completed;
   }
 
@@ -45,16 +51,26 @@ class Franchise {
   /// 6 years.
   bool get endedRecently {
     if (members.isEmpty || !members.first.isAnime) return false;
+    final latest = latestMainEnd;
+    if (latest == null) return false;
+    return DateTime.now().difference(latest) < recentEndWindow;
+  }
+
+  /// Main entries (no recaps/specials/music), earliest first.
+  List<TitleDetail> get mainByDate =>
+      [for (final m in members) if (!_minorTypes.contains(m.mediaType)) m]
+        ..sort((a, b) => a.sortDate.compareTo(b.sortDate));
+
+  /// When the last main entry ended.
+  DateTime? get latestMainEnd {
     DateTime? latest;
-    for (final m in members) {
-      if (_minorTypes.contains(m.mediaType)) continue;
+    for (final m in mainByDate) {
       final end = m.endedOn;
       if (end != null && (latest == null || end.isAfter(latest))) {
         latest = end;
       }
     }
-    if (latest == null) return false;
-    return DateTime.now().difference(latest) < recentEndWindow;
+    return latest;
   }
 
   /// Released members, earliest first.
@@ -104,7 +120,48 @@ class FranchiseResolver {
       }
       frontier = next;
     }
-    return members.isEmpty ? null : Franchise(members);
+    if (members.isEmpty) return null;
+    final franchise = Franchise(members);
+    if (franchise.endedRecently) {
+      franchise.fullyAdapted = await _isFullyAdapted(franchise);
+    }
+    return franchise;
+  }
+
+  /// Heuristic for "the anime has adapted all of its source":
+  /// - an anime original (nothing left to adapt), or
+  /// - its source manga / light novel has finished, and the anime's last
+  ///   main entry ended on or after the source's last release.
+  /// Unknown or unreachable sources count as not fully adapted.
+  Future<bool> _isFullyAdapted(Franchise f) async {
+    final mains = f.mainByDate;
+    if (mains.isEmpty) return false;
+    if (mains.first.source == 'original') return true;
+
+    final sourceIds = <int>{for (final m in mains) ...m.adaptedFrom};
+    if (sourceIds.isEmpty) return false;
+
+    try {
+      final sources = [
+        for (final s in await Future.wait(
+          sourceIds.take(4).map((id) => _store.get(id, anime: false)),
+        ))
+          if (s != null) s,
+      ];
+      if (sources.isEmpty) return false;
+      // The original work is the one that started first (an LN before its
+      // manga adaptation, for example).
+      sources.sort((a, b) => a.sortDate.compareTo(b.sortDate));
+      final original = sources.first;
+      if (!original.isFinished) return false;
+
+      final sourceEnd = original.endedOn;
+      final animeEnd = f.latestMainEnd;
+      if (sourceEnd == null || animeEnd == null) return false;
+      return !animeEnd.isBefore(sourceEnd);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Like [chainOf], but if the chain is a side story (e.g. an OVA whose

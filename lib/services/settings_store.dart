@@ -6,7 +6,8 @@ enum Completion {
   completed('Completed', 'Whole sequel/prequel chain finished'),
   hiatus('On hiatus / discontinued', 'Paused or cancelled'),
   ongoing('Ongoing', 'Still airing or publishing. For anime, also any '
-      'franchise whose latest entry ended within the past 6 years');
+      'franchise whose latest entry ended within the past 6 years, unless '
+      'it already adapted all of its source');
 
   final String label;
   final String hint;

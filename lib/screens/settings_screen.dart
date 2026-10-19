@@ -331,7 +331,8 @@ class _RecommendationSettings extends StatelessWidget {
                 subtitle: Text(
                   c == Completion.completed
                       ? 'Every sequel and prequel has ended (spin-offs may be '
-                          'ongoing). For anime, the latest ended over 6 years ago'
+                          'ongoing). For anime, the latest ended over 6 years ago or the '
+                          'whole source has been adapted'
                       : c.hint,
                 ),
                 onChanged: (_) {

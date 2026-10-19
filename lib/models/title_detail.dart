@@ -26,6 +26,12 @@ class TitleDetail {
   final double? malScore;
   final String? pictureUrl;
   final List<Relation> relations;
+
+  /// Anime only: MAL's source type ("manga", "light_novel", "original"...)
+  /// and the MAL manga ids this anime adapts.
+  final String? source;
+  final List<int> adaptedFrom;
+
   final DateTime fetched;
 
   const TitleDetail({
@@ -40,6 +46,8 @@ class TitleDetail {
     this.malScore,
     this.pictureUrl,
     required this.relations,
+    this.source,
+    this.adaptedFrom = const [],
     required this.fetched,
   });
 
@@ -110,6 +118,17 @@ class TitleDetail {
               r['relation_type'] as String? ?? 'other',
             ),
       ],
+      source: anime ? j['source'] as String? : null,
+      adaptedFrom: !anime
+          ? const []
+          : [
+              for (final r in (j['related_manga'] as List?) ?? const [])
+                if (r is Map &&
+                    r['relation_type'] == 'adaptation' &&
+                    r['node'] is Map &&
+                    (r['node'] as Map)['id'] is int)
+                  (r['node'] as Map)['id'] as int,
+            ],
       fetched: DateTime.now(),
     );
   }
@@ -126,6 +145,8 @@ class TitleDetail {
         if (malScore != null) 'mean': malScore,
         if (pictureUrl != null) 'pic': pictureUrl,
         'r': [for (final r in relations) r.toJson()],
+        if (source != null) 'src': source,
+        if (adaptedFrom.isNotEmpty) 'adp': adaptedFrom,
         'f': fetched.millisecondsSinceEpoch,
       };
 
@@ -143,6 +164,10 @@ class TitleDetail {
         relations: [
           for (final r in j['r'] as List)
             Relation.fromJson(r as Map<String, dynamic>)
+        ],
+        source: j['src'] as String?,
+        adaptedFrom: [
+          for (final id in (j['adp'] as List?) ?? const []) id as int,
         ],
         fetched: DateTime.fromMillisecondsSinceEpoch(j['f'] as int),
       );
