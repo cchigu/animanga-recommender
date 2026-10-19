@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/catalog_title.dart';
+import '../services/mal_api.dart';
 import '../services/picker.dart';
 
 /// The reveal card shown after the countdown. Cover art, synopsis and an
@@ -38,7 +39,7 @@ class TitleCard extends StatelessWidget {
           children: [
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.28),
                 borderRadius: BorderRadius.circular(28),
@@ -55,17 +56,14 @@ class TitleCard extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  _Chip(
-                    text: title.isAnime ? 'ANIME' : 'MANGA',
-                    color: accent,
-                  ),
+                  _Cover(title: title, accent: accent),
                   const SizedBox(height: 18),
                   Text(
                     title.displayTitle,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 30,
+                      fontSize: 26,
                       fontWeight: FontWeight.w800,
                       height: 1.15,
                     ),
@@ -163,18 +161,92 @@ class TitleCard extends StatelessWidget {
   }
 }
 
+/// Cover art with the ANIME / MANGA tag on its corner.
+class _Cover extends StatelessWidget {
+  final CatalogTitle title;
+  final Color accent;
+
+  const _Cover({required this.title, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final height = (screen.height * 0.40).clamp(220.0, 380.0);
+    final width = height * 0.7; // MAL covers are roughly 2:3
+
+    Widget placeholder(IconData icon) => Container(
+          color: Colors.white.withValues(alpha: 0.06),
+          alignment: Alignment.center,
+          child: Icon(icon, size: 48, color: Colors.white38),
+        );
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.55),
+                blurRadius: 30,
+                spreadRadius: 1,
+              ),
+              const BoxShadow(
+                color: Colors.black54,
+                blurRadius: 12,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: title.pictureUrl == null
+              ? placeholder(Icons.image_not_supported_outlined)
+              : Image.network(
+                  title.pictureUrl!,
+                  fit: BoxFit.cover,
+                  headers: MalApi.imageHeaders,
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null
+                          ? child
+                          : placeholder(Icons.image_outlined),
+                  errorBuilder: (_, __, ___) =>
+                      placeholder(Icons.broken_image_outlined),
+                ),
+        ),
+        Positioned(
+          top: 10,
+          left: 10,
+          child: _Chip(
+            text: title.isAnime ? 'ANIME' : 'MANGA',
+            color: accent,
+            solid: true,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _Chip extends StatelessWidget {
   final String text;
   final Color color;
 
-  const _Chip({required this.text, required this.color});
+  /// Opaque background, for chips laid over the cover art.
+  final bool solid;
+
+  const _Chip({required this.text, required this.color, this.solid = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.25),
+        color: solid
+            ? Color.lerp(color, Colors.black, 0.45)!.withValues(alpha: 0.9)
+            : color.withValues(alpha: 0.25),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: 0.7)),
       ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/catalog_title.dart';
 import '../services/library_store.dart';
+import '../services/mal_api.dart';
 import '../services/picker.dart';
 import '../services/settings_store.dart';
 import '../theme.dart';
@@ -29,6 +30,15 @@ class _HomeScreenState extends State<HomeScreen> {
   /// The pick is made when the countdown starts and revealed when it ends.
   void _startCountdown() {
     final result = Picker.instance.pick();
+    // Load the cover during the countdown so it's ready at the reveal.
+    final url = result.title?.pictureUrl;
+    if (url != null) {
+      precacheImage(
+        NetworkImage(url, headers: MalApi.imageHeaders),
+        context,
+        onError: (_, __) {},
+      );
+    }
     setState(() {
       _result = result;
       _phase = result.title == null ? _Phase.empty : _Phase.counting;
