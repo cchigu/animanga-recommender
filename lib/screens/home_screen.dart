@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../models/demo_titles.dart';
+import '../models/catalog_title.dart';
 import '../services/library_store.dart';
+import '../services/picker.dart';
 import '../services/settings_store.dart';
 import '../theme.dart';
 import '../widgets/countdown.dart';
@@ -10,7 +11,7 @@ import '../widgets/tap_circle.dart';
 import '../widgets/title_card.dart';
 import 'settings_screen.dart';
 
-enum _Phase { idle, counting, revealed }
+enum _Phase { idle, counting, revealed, empty }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,25 +22,28 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   _Phase _phase = _Phase.idle;
-  PickedTitle? _title;
+  PickResult? _result;
+  CatalogTitle? get _title => _result?.title;
   BackdropPalette _palette = BackdropPalette.initial;
 
+  /// The pick is made when the countdown starts and revealed when it ends.
   void _startCountdown() {
-    setState(() => _phase = _Phase.counting);
+    final result = Picker.instance.pick();
+    setState(() {
+      _result = result;
+      _phase = result.title == null ? _Phase.empty : _Phase.counting;
+    });
   }
 
   void _reveal() {
-    // Milestone 5 replaces this with the real picker engine.
-    final pick = randomDemoTitle(
-      _title,
-      anime: SettingsStore.instance.anime,
-    );
+    final pick = _title!;
     setState(() {
-      _title = pick;
-      _palette = BackdropPalette.from(pick.color);
+      _palette = BackdropPalette.from(pick.color ?? kDefaultAccent);
       _phase = _Phase.revealed;
     });
   }
+
+  void _backToIdle() => setState(() => _phase = _Phase.idle);
 
   void _openSettings() {
     Navigator.of(context).push(
@@ -128,12 +132,20 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       case _Phase.revealed:
         return SingleChildScrollView(
-          key: ValueKey(_title!.name),
+          key: ValueKey('${_title!.isAnime}-${_title!.malId}'),
           child: TitleCard(
             title: _title!,
             accent: _palette.accent,
+            poolSize: _result!.poolSize,
             onAgain: _startCountdown,
           ),
+        );
+      case _Phase.empty:
+        return NoMatchCard(
+          key: const ValueKey('empty'),
+          reason: _result?.emptyReason ?? 'No titles match your settings.',
+          accent: _palette.accent,
+          onBack: _backToIdle,
         );
     }
   }

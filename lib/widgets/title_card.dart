@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
-import '../models/demo_titles.dart';
+import '../models/catalog_title.dart';
+import '../services/picker.dart';
 
 /// The reveal card shown after the countdown. Cover art, synopsis and an
 /// "Open on MAL" button get added in Milestone 7.
 class TitleCard extends StatelessWidget {
-  final PickedTitle title;
+  final CatalogTitle title;
   final Color accent;
   final VoidCallback onAgain;
+
+  /// How many titles this one was picked from.
+  final int poolSize;
 
   const TitleCard({
     super.key,
     required this.title,
     required this.accent,
     required this.onAgain,
+    required this.poolSize,
   });
 
   @override
@@ -56,7 +61,7 @@ class TitleCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    title.name,
+                    title.displayTitle,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
@@ -65,6 +70,17 @@ class TitleCard extends StatelessWidget {
                       height: 1.15,
                     ),
                   ),
+                  if (title.displayTitle != title.title) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      title.title,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 18),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -72,7 +88,7 @@ class TitleCard extends StatelessWidget {
                       Icon(Icons.star_rounded, color: accent, size: 28),
                       const SizedBox(width: 4),
                       Text(
-                        title.malScore.toStringAsFixed(2),
+                        title.malScore?.toStringAsFixed(2) ?? 'N/A',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 22,
@@ -95,14 +111,36 @@ class TitleCard extends StatelessWidget {
                     runSpacing: 8,
                     alignment: WrapAlignment.center,
                     children: [
-                      _Chip(text: title.format, color: Colors.white24),
-                      _Chip(text: title.status, color: Colors.white24),
+                      _Chip(
+                        text: formatLabel(title.mediaType),
+                        color: Colors.white24,
+                      ),
+                      _Chip(
+                        text: releaseLabel(title.releaseStatus),
+                        color: Colors.white24,
+                      ),
+                      if (title.isDonghua)
+                        const _Chip(text: 'Donghua', color: Colors.white24),
+                      if (title.startDate != null &&
+                          title.startDate!.length >= 4)
+                        _Chip(
+                          text: title.startDate!.substring(0, 4),
+                          color: Colors.white24,
+                        ),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 12),
+            Text(
+              'Picked from $poolSize eligible titles',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onAgain,
               style: FilledButton.styleFrom(
@@ -148,6 +186,61 @@ class _Chip extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 1.1,
         ),
+      ),
+    );
+  }
+}
+
+/// Shown when no title fits the current settings.
+class NoMatchCard extends StatelessWidget {
+  final String reason;
+  final Color accent;
+  final VoidCallback onBack;
+
+  const NoMatchCard({
+    super.key,
+    required this.reason,
+    required this.accent,
+    required this.onBack,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.search_off_rounded, size: 64, color: accent),
+          const SizedBox(height: 16),
+          const Text(
+            'Nothing to recommend',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            reason,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Try loosening a setting.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.55),
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(onPressed: onBack, child: const Text('Back')),
+        ],
       ),
     );
   }
