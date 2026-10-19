@@ -13,14 +13,14 @@ class Franchise {
 
   /// An anime franchise whose latest main entry ended this recently counts
   /// as ongoing, since a sequel is likely even if none is announced yet.
-  static const recentEndWindow = Duration(days: 4 * 365 + 1);
+  static const recentEndWindow = Duration(days: 6 * 365 + 2);
 
   /// Formats that don't count as "the latest entry" for that rule.
   static const _minorTypes = {'special', 'tv_special', 'music', 'cm', 'pv'};
 
   /// Release status of the whole chain:
   /// anything still airing/publishing or announced → ongoing,
-  /// otherwise (anime) the latest entry ended within 4 years → ongoing,
+  /// otherwise (anime) the latest entry ended within 6 years → ongoing,
   /// otherwise anything on hiatus/discontinued → hiatus,
   /// otherwise → completed.
   Completion get completion {
@@ -42,7 +42,7 @@ class Franchise {
   }
 
   /// True for anime whose latest TV/ONA/movie/OVA entry ended in the last
-  /// 4 years.
+  /// 6 years.
   bool get endedRecently {
     if (members.isEmpty || !members.first.isAnime) return false;
     DateTime? latest;
