@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/demo_titles.dart';
 import '../services/library_store.dart';
+import '../services/settings_store.dart';
 import '../theme.dart';
 import '../widgets/countdown.dart';
 import '../widgets/profile_avatar.dart';
@@ -29,7 +30,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _reveal() {
     // Milestone 5 replaces this with the real picker engine.
-    final pick = randomDemoTitle(_title);
+    final pick = randomDemoTitle(
+      _title,
+      anime: SettingsStore.instance.anime,
+    );
     setState(() {
       _title = pick;
       _palette = BackdropPalette.from(pick.color);
@@ -95,18 +99,21 @@ class _HomeScreenState extends State<HomeScreen> {
             TapCircle(accent: _palette.accent, onTap: _startCountdown),
             const SizedBox(height: 36),
             ListenableBuilder(
-              listenable: LibraryStore.instance,
+              listenable: Listenable.merge(
+                [LibraryStore.instance, SettingsStore.instance],
+              ),
               builder: (context, _) {
                 final store = LibraryStore.instance;
                 final text = store.isConnected
-                    ? '${store.anime.length} anime · ${store.manga.length} manga on your list'
+                    ? SettingsStore.instance.summary
                     : 'Tap your profile icon to connect MyAnimeList';
                 return Text(
                   text,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.7),
-                    fontSize: 14,
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
                 );
               },

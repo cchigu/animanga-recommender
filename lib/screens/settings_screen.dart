@@ -3,46 +3,13 @@ import 'package:flutter/material.dart';
 import '../models/list_entry.dart';
 import '../services/catalog_store.dart';
 import '../services/library_store.dart';
+import '../services/settings_store.dart';
 import '../widgets/profile_avatar.dart';
 
 /// Settings: the MAL account (Milestone 2) and the recommendation settings,
 /// which become real controls in Milestone 4.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  static const _upcoming = <(IconData, String, String)>[
-    (Icons.swap_horiz_rounded, 'Anime or manga', 'Which kind of title to pick'),
-    (
-      Icons.check_circle_outline_rounded,
-      'Completion status',
-      'Completed (whole sequel/prequel chain) · Hiatus/discontinued · Ongoing',
-    ),
-    (
-      Icons.looks_one_outlined,
-      'First major entry only',
-      'Earliest-released main entry of the franchise',
-    ),
-    (
-      Icons.shuffle_rounded,
-      'Pick mode',
-      'Best score · Weighted random (score − 5)⁴ · Completely random',
-    ),
-    (
-      Icons.menu_book_outlined,
-      'Manga formats',
-      'Manga · Manhwa · Manhua · Light novels · Novels',
-    ),
-    (
-      Icons.movie_outlined,
-      'Anime formats',
-      'Donghua · Movies · OVAs · ONAs',
-    ),
-    (
-      Icons.bookmark_border_rounded,
-      'Only from Plan to Watch / Read',
-      'Uses the franchise\'s first entry if any entry is on the list',
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -64,32 +31,24 @@ class SettingsScreen extends StatelessWidget {
                 : _ConnectCard(),
           ),
           const SizedBox(height: 16),
-          const _SectionHeader('Catalog'),
-          ListenableBuilder(
-            listenable: CatalogStore.instance,
-            // ignore: prefer_const_constructors
-            builder: (context, _) => _CatalogCard(),
-          ),
-          const SizedBox(height: 16),
           const _SectionHeader('Recommendations'),
-          Card(
-            child: Column(
-              children: [
-                for (final (icon, title, subtitle) in _upcoming)
-                  ListTile(
-                    enabled: false,
-                    leading: Icon(icon),
-                    title: Text(title),
-                    subtitle: Text(subtitle),
-                  ),
-              ],
-            ),
+          ListenableBuilder(
+            listenable: SettingsStore.instance,
+            // ignore: prefer_const_constructors
+            builder: (context, _) => _RecommendationSettings(),
           ),
           const SizedBox(height: 12),
           Text(
             'Completed, watching, on-hold, and dropped titles are always excluded.',
             textAlign: TextAlign.center,
             style: TextStyle(color: muted, fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+          const _SectionHeader('Catalog'),
+          ListenableBuilder(
+            listenable: CatalogStore.instance,
+            // ignore: prefer_const_constructors
+            builder: (context, _) => _CatalogCard(),
           ),
         ],
       ),
@@ -298,6 +257,168 @@ class _ConnectedCard extends StatelessWidget {
     if (d.inHours < 1) return '${d.inMinutes} min ago';
     if (d.inDays < 1) return '${d.inHours} h ago';
     return '${d.inDays} d ago';
+  }
+}
+
+/// The seven recommendation settings.
+class _RecommendationSettings extends StatelessWidget {
+  const _RecommendationSettings();
+
+  void _nope(BuildContext context, String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = SettingsStore.instance;
+    final kind = s.anime ? 'anime' : 'manga';
+    final muted = Colors.white.withValues(alpha: 0.65);
+
+    Widget label(String title, [String? hint]) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+              if (hint != null) ...[
+                const SizedBox(height: 2),
+                Text(hint, style: TextStyle(color: muted, fontSize: 12.5)),
+              ],
+            ],
+          ),
+        );
+
+    const gap = SizedBox(height: 20);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Anime or manga
+            label('Pick from'),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: true,
+                  label: Text('Anime'),
+                  icon: Icon(Icons.live_tv_rounded),
+                ),
+                ButtonSegment(
+                  value: false,
+                  label: Text('Manga'),
+                  icon: Icon(Icons.menu_book_rounded),
+                ),
+              ],
+              selected: {s.anime},
+              onSelectionChanged: (v) => s.setAnime(v.first),
+            ),
+            gap,
+
+            // 1. Completion
+            label('Release status', 'Pick one or more'),
+            for (final c in Completion.values)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: s.completion.contains(c),
+                title: Text(c.label),
+                subtitle: Text(
+                  c == Completion.completed
+                      ? 'Every sequel and prequel has ended (spin-offs may be ongoing)'
+                      : c.hint,
+                ),
+                onChanged: (_) {
+                  if (!s.toggleCompletion(c)) {
+                    _nope(context, 'Keep at least one release status on.');
+                  }
+                },
+              ),
+            gap,
+
+            // 2. First entry
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: s.firstEntryOnly,
+              title: const Text('First major entry only'),
+              subtitle: const Text(
+                  'Show the earliest-released main entry of a franchise, '
+                  'never a season 2 or 3'),
+              onChanged: s.setFirstEntryOnly,
+            ),
+            gap,
+
+            // 3. Pick mode
+            label('How to pick'),
+            for (final m in PickMode.values)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Icon(
+                  s.pickMode == m
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: s.pickMode == m
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
+                title: Text(m.label),
+                subtitle: Text(m.hint),
+                onTap: () => s.setPickMode(m),
+              ),
+            gap,
+
+            // 4/5. Formats
+            label(
+              s.anime ? 'Anime formats' : 'Manga formats',
+              'Turn a format off to filter it out',
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final f in TitleFormat.forKind(anime: s.anime))
+                  FilterChip(
+                    label: Text(f.label),
+                    selected: s.formats.contains(f),
+                    onSelected: (_) {
+                      if (!s.toggleFormat(f)) {
+                        _nope(context, 'Keep at least one $kind format on.');
+                      }
+                    },
+                  ),
+              ],
+            ),
+            if (s.anime) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Donghua off hides Chinese anime of every format.',
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
+            gap,
+
+            // 6. Plan to watch / read
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: s.plannedOnly,
+              title: Text(s.anime
+                  ? 'Only from Plan to Watch'
+                  : 'Only from Plan to Read'),
+              subtitle: const Text(
+                  'If a later season is on the list, its franchise\'s first '
+                  'entry can be picked'),
+              onChanged: s.setPlannedOnly,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

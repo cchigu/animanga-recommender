@@ -75,11 +75,12 @@ const List<PickedTitle> kDemoTitles = [
 
 final _rng = Random();
 
-/// Picks a demo title, never the same one twice in a row.
-PickedTitle randomDemoTitle([PickedTitle? previous]) {
+/// Picks a demo title of the chosen kind, never the same one twice in a row.
+PickedTitle randomDemoTitle(PickedTitle? previous, {required bool anime}) {
+  final pool = [for (final t in kDemoTitles) if (t.isAnime == anime) t];
   PickedTitle pick;
   do {
-    pick = kDemoTitles[_rng.nextInt(kDemoTitles.length)];
-  } while (kDemoTitles.length > 1 && identical(pick, previous));
+    pick = pool[_rng.nextInt(pool.length)];
+  } while (pool.length > 1 && identical(pick, previous));
   return pick;
 }
