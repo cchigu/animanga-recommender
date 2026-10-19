@@ -96,9 +96,15 @@ class MalApi {
     }
   }
 
-  /// Profile picture URL, or null if the user has none or Jikan is down.
+  /// Profile picture URL, or null if the user has none or MAL can't be read.
+  /// Tries Jikan first, then the MAL profile page itself.
   /// Never throws: a missing picture shouldn't block connecting.
   Future<String?> fetchAvatarUrl(String username) async {
+    return await _avatarFromJikan(username) ??
+        await _avatarFromProfilePage(username);
+  }
+
+  Future<String?> _avatarFromJikan(String username) async {
     try {
       final res = await _client
           .get(Uri.parse('$_jikanBase/users/${Uri.encodeComponent(username)}'))
@@ -107,9 +113,40 @@ class MalApi {
       final data = (jsonDecode(res.body) as Map<String, dynamic>)['data']
           as Map<String, dynamic>?;
       final images = data?['images'] as Map<String, dynamic>?;
-      final url = (images?['webp']?['image_url'] ??
-          images?['jpg']?['image_url']) as String?;
+      final url = (images?['jpg']?['image_url'] ??
+          images?['webp']?['image_url']) as String?;
       return (url == null || url.isEmpty) ? null : url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static final _userImage = RegExp(
+    r'https://cdn\.myanimelist\.net/(?:r/\d+x\d+/)?images/userimages/\d+\.(?:jpe?g|png|gif|webp)(?:\?[^"\s<>]*)?',
+    caseSensitive: false,
+  );
+
+  Future<String?> _avatarFromProfilePage(String username) async {
+    try {
+      final res = await _client.get(
+        Uri.parse(
+            'https://myanimelist.net/profile/${Uri.encodeComponent(username)}'),
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 14) AnimangaRecommender/0.2',
+        },
+      ).timeout(_timeout);
+      if (res.statusCode != 200) return null;
+      // The owner's picture sits in the "user-image" block; search from there
+      // so a friend's picture further down the page can't be picked up.
+      final body = res.body;
+      final at = body.indexOf('user-image');
+      final match = _userImage
+          .firstMatch(at >= 0 ? body.substring(at) : body)
+          ?.group(0);
+      if (match == null) return null;
+      // Ask for the full-size image instead of a resized thumbnail.
+      return match.replaceFirst(RegExp(r'/r/\d+x\d+/'), '/');
     } catch (_) {
       return null;
     }
