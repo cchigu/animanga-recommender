@@ -277,4 +277,36 @@ class FranchiseResolver {
     }
     return false;
   }
+
+  /// Manga only: the title of a finished anime that fully adapts [mangaId]
+  /// and that the user has completed, or null if there isn't one.
+  /// "Fully adapts" = the manga has finished and the anime's last main
+  /// entry ended on or after the manga's end.
+  Future<String?> watchedFullAdaptation(
+    int mangaId, {
+    required bool Function(int animeMalId) completed,
+  }) async {
+    final adaptations = await _store.animeAdaptationsOf(mangaId);
+    // Cheap check first: has the user completed any of them?
+    final seen = [for (final id in adaptations) if (completed(id)) id];
+    if (seen.isEmpty) return null;
+
+    final manga = await _store.get(mangaId, anime: false);
+    if (manga == null || !manga.isFinished) return null;
+    final mangaEnd = manga.endedOn;
+    if (mangaEnd == null) return null;
+
+    for (final id in seen.take(3)) {
+      final chain = await chainOf(id, anime: true);
+      if (chain == null) continue;
+      final mains = chain.mainByDate.where((m) => m.isReleased).toList();
+      if (mains.isEmpty) continue;
+      if (!mains.every((m) => m.isFinished)) continue; // anime still going
+      if (!mains.every((m) => completed(m.malId))) continue; // not all seen
+      final animeEnd = chain.latestMainEnd;
+      if (animeEnd == null || animeEnd.isBefore(mangaEnd)) continue;
+      return mains.first.title;
+    }
+    return null;
+  }
 }

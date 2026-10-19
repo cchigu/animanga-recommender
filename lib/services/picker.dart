@@ -249,6 +249,9 @@ class Picker {
           )) {
         return _Outcome(null, key);
       }
+      if (!ctx.anime && await _watchedAsAnime(cand.malId, ctx)) {
+        return _Outcome(null, key);
+      }
       if (!await _passesDonghua(cand, ctx)) return _Outcome(null, key);
       return _Outcome(await _withColor(cand, ctx), key);
     }
@@ -298,9 +301,27 @@ class Picker {
       return _Outcome(null, key);
     }
 
+    if (!ctx.anime && await _watchedAsAnime(entry.malId, ctx)) {
+      return _Outcome(null, key);
+    }
+
     final title = _fromDetail(entry, ctx);
     if (!await _passesDonghua(title, ctx)) return _Outcome(null, key);
     return _Outcome(await _withColor(title, ctx), key);
+  }
+
+  /// Manga: true if the user completed an anime that fully adapts it.
+  Future<bool> _watchedAsAnime(int mangaId, _Context ctx) async {
+    final completedAnime = {
+      for (final e in LibraryStore.instance.anime)
+        if (e.userStatus == UserStatus.completed) e.malId,
+    };
+    if (completedAnime.isEmpty) return false;
+    final hit = await _resolver.watchedFullAdaptation(
+      mangaId,
+      completed: completedAnime.contains,
+    );
+    return hit != null;
   }
 
   /// False if Donghua is switched off and this is Chinese animation.

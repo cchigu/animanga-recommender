@@ -214,6 +214,34 @@ class Explainer {
       add(false, 'Couldn\'t check the franchise: ${e.message}');
     }
 
+    if (!anime) {
+      try {
+        final completedAnime = {
+          for (final e in LibraryStore.instance.anime)
+            if (e.userStatus == UserStatus.completed) e.malId,
+        };
+        final adaptations =
+            await DetailStore.instance.animeAdaptationsOf(t.malId);
+        final hit = completedAnime.isEmpty
+            ? null
+            : await _resolver.watchedFullAdaptation(
+                t.malId,
+                completed: completedAnime.contains,
+              );
+        if (hit != null) {
+          add(false, 'You completed the anime "$hit", which fully adapts '
+              'this manga.');
+        } else if (adaptations.isEmpty) {
+          add(null, 'No anime adaptation found.');
+        } else {
+          add(true, 'Has an anime adaptation, but you haven\'t completed one '
+              'that covers the whole manga.');
+        }
+      } on MalException catch (e) {
+        add(null, 'Couldn\'t check anime adaptations: ${e.message}');
+      }
+    }
+
     final blockers = steps.where((x) => x.ok == false).length;
     add(blockers == 0,
         blockers == 0

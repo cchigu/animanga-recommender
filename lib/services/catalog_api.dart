@@ -256,6 +256,63 @@ query ($id: Int) {
     return null;
   }
 
+  static const _adaptationQuery = r'''
+query ($id: Int) {
+  Media(idMal: $id, type: MANGA) {
+    relations {
+      edges {
+        relationType(version: 2)
+        node { type idMal }
+      }
+    }
+  }
+}''';
+
+  /// MAL ids of the anime that adapt a manga, from AniList. Null when
+  /// AniList can't be reached or doesn't know the manga.
+  Future<List<int>?> aniListAnimeAdaptations(int mangaMalId) async {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final http.Response res;
+      try {
+        res = await _client
+            .post(
+              Uri.parse(_aniList),
+              headers: const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'query': _adaptationQuery,
+                'variables': {'id': mangaMalId},
+              }),
+            )
+            .timeout(_timeout);
+      } catch (_) {
+        return null;
+      }
+      _learnRateLimit(res);
+      if (res.statusCode == 429) {
+        final wait = int.tryParse(res.headers['retry-after'] ?? '') ?? 30;
+        await Future.delayed(Duration(seconds: wait + 1));
+        continue;
+      }
+      if (res.statusCode != 200) return null;
+      final media = ((jsonDecode(res.body) as Map)['data'] as Map?)?['Media'];
+      if (media is! Map) return null;
+      final edges = (media['relations'] as Map?)?['edges'] as List? ?? [];
+      return [
+        for (final e in edges)
+          if (e is Map &&
+              e['relationType'] == 'ADAPTATION' &&
+              e['node'] is Map &&
+              (e['node'] as Map)['type'] == 'ANIME' &&
+              (e['node'] as Map)['idMal'] is int)
+            (e['node'] as Map)['idMal'] as int,
+      ];
+    }
+    return null;
+  }
+
   static String _dateKey(Map? d) {
     final y = d?['year'] as int?;
     if (y == null) return '9999';

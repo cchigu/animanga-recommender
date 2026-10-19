@@ -30,6 +30,7 @@ class DetailStore {
   final Map<String, TitleDetail> _details = {};
   final Map<String, AniListInfo> _aniInfo = {};
   final Map<int, AniListSource> _aniSource = {};
+  final Map<int, List<int>> _mangaAdaptations = {};
   final Map<String, Future<TitleDetail?>> _inFlight = {};
 
   int _running = 0;
@@ -56,6 +57,13 @@ class DetailStore {
         final d = TitleDetail.fromJson(e as Map<String, dynamic>);
         _details[_key(d.malId, d.isAnime)] = d;
       }
+      final madp = j['madp'] as Map<String, dynamic>? ?? const {};
+      madp.forEach((k, v) {
+        final id = int.tryParse(k);
+        if (id != null) {
+          _mangaAdaptations[id] = [for (final x in v as List) x as int];
+        }
+      });
       final src = j['srcv'] == 2
           ? j['src'] as Map<String, dynamic>? ?? const {}
           : const <String, dynamic>{};
@@ -86,6 +94,9 @@ class DetailStore {
         await f.writeAsString(jsonEncode({
           'v': _version,
           'd': [for (final d in _details.values) d.toJson()],
+          'madp': {
+            for (final e in _mangaAdaptations.entries) '${e.key}': e.value,
+          },
           'srcv': 2,
           'src': {
             for (final e in _aniSource.entries) '${e.key}': e.value.toJson(),
@@ -192,16 +203,44 @@ class DetailStore {
   }
 
   static final _mangaLink = RegExp(r'myanimelist\.net/manga/(\d+)');
+  static final _animeLink = RegExp(r'myanimelist\.net/anime/(\d+)');
 
   /// Last resort for anime the API won't link to a source: reads the
   /// "Adaptation" entry off the anime's MAL page. Returns MAL manga ids
   /// (empty if none found); never throws.
-  Future<List<int>> scrapeAdaptations(int animeMalId) async {
+  Future<List<int>> scrapeAdaptations(int animeMalId) => _scrapeAdaptationLinks(
+        'https://myanimelist.net/anime/$animeMalId',
+        _mangaLink,
+      );
+
+  /// MAL ids of the anime adapting a manga: AniList first, then the
+  /// "Adaptation" entries on the MAL manga page. Cached; never throws.
+  Future<List<int>> animeAdaptationsOf(int mangaMalId) async {
+    final cached = _mangaAdaptations[mangaMalId];
+    if (cached != null) return cached;
+    var ids = await _aniList.aniListAnimeAdaptations(mangaMalId);
+    final reachedAniList = ids != null;
+    if (ids == null || ids.isEmpty) {
+      final scraped = await _scrapeAdaptationLinks(
+        'https://myanimelist.net/manga/$mangaMalId',
+        _animeLink,
+      );
+      if (scraped.isNotEmpty) ids = scraped;
+    }
+    ids ??= const [];
+    // Only remember an empty answer if AniList actually answered.
+    if (ids.isNotEmpty || reachedAniList) {
+      _mangaAdaptations[mangaMalId] = ids;
+      _scheduleSave();
+    }
+    return ids;
+  }
+
+  Future<List<int>> _scrapeAdaptationLinks(String url, RegExp link) async {
     try {
-      final res = await _client.get(
-        Uri.parse('https://myanimelist.net/anime/$animeMalId'),
-        headers: MalApi.imageHeaders,
-      ).timeout(const Duration(seconds: 15));
+      final res = await _client
+          .get(Uri.parse(url), headers: MalApi.imageHeaders)
+          .timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) return const [];
       final html = res.body;
       final ids = <int>{};
@@ -210,15 +249,14 @@ class DetailStore {
         final at = html.indexOf('Adaptation', from);
         if (at < 0) break;
         from = at + 10;
-        // The manga's link sits right next to its "Adaptation" label, in
+        // The linked title sits right next to its "Adaptation" label, in
         // both MAL's tile layout and its older table layout.
         final start = (at - 900).clamp(0, html.length);
         final end = (at + 900).clamp(0, html.length);
         final window = html.substring(start, end);
-        // Nearest link to the label wins.
         int? best;
         var bestDist = 1 << 30;
-        for (final m in _mangaLink.allMatches(window)) {
+        for (final m in link.allMatches(window)) {
           final dist = ((start + m.start) - at).abs();
           if (dist < bestDist) {
             bestDist = dist;
@@ -226,7 +264,7 @@ class DetailStore {
           }
         }
         if (best != null) ids.add(best);
-        if (ids.length >= 4) break;
+        if (ids.length >= 6) break;
       }
       return ids.toList();
     } catch (_) {
