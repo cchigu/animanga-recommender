@@ -418,6 +418,20 @@ class _RecommendationSettings extends StatelessWidget {
             ],
             gap,
 
+            if (!s.anime) ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.skipAdapted,
+                title: const Text('Exclude adapted manga'),
+                subtitle: Text(
+                    'Skip manga whose anime adaptations add up to '
+                    '${SettingsStore.adaptedMinutes}+ minutes, including '
+                    'announced ones. Music videos and commercials don\'t count.'),
+                onChanged: s.setSkipAdapted,
+              ),
+              gap,
+            ],
+
             // 6. Plan to watch / read
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

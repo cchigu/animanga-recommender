@@ -214,6 +214,19 @@ class Explainer {
       add(false, 'Couldn\'t check the franchise: ${e.message}');
     }
 
+    if (!anime && s.skipAdapted) {
+      try {
+        const limit = SettingsStore.adaptedMinutes;
+        final r = await _resolver.adaptationRuntime(t.malId);
+        add(r.minutes < limit,
+            'Anime adaptations: ${r.minutes} min combined'
+            '${r.minutes >= limit ? ' (≥ $limit, and "Exclude adapted manga" is on)' : ''}. '
+            '${r.note}');
+      } on MalException catch (e) {
+        add(null, 'Couldn\'t add up adaptations: ${e.message}');
+      }
+    }
+
     if (!anime) {
       try {
         final completedAnime = {

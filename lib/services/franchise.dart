@@ -349,6 +349,48 @@ class FranchiseResolver {
     return AdaptationCheck(
         null, notes.isEmpty ? 'Couldn\'t check the anime.' : notes.join(' '));
   }
+
+  /// Manga only: combined runtime of every anime adapting [mangaId],
+  /// including each one's sequels/prequels, released or announced. Stops
+  /// adding once it reaches [stopAt] minutes.
+  Future<AdaptationRuntime> adaptationRuntime(int mangaId,
+      {int stopAt = 1 << 30}) async {
+    final adaptations = await _store.animeAdaptationsOf(mangaId);
+    if (adaptations.isEmpty) {
+      return const AdaptationRuntime(0, 'No anime adaptation found.');
+    }
+    final counted = <int>{};
+    final parts = <String>[];
+    var total = 0;
+    for (final id in adaptations.take(6)) {
+      if (counted.contains(id)) continue;
+      final chain = await chainOf(id, anime: true);
+      if (chain == null) continue;
+      for (final m in chain.members) {
+        if (!counted.add(m.malId)) continue;
+        final mins = m.estimatedMinutes;
+        if (mins <= 0) continue;
+        total += mins;
+        parts.add('${m.title} (${m.mediaType.toUpperCase()}, '
+            '${m.runtimeEstimated ? '~' : ''}$mins min)');
+      }
+      if (total >= stopAt) break;
+    }
+    final shown = parts.take(4).join(', ');
+    final more = parts.length > 4 ? ' and ${parts.length - 4} more' : '';
+    return AdaptationRuntime(
+      total,
+      parts.isEmpty
+          ? 'Adaptations are only music videos, commercials or promos.'
+          : '$shown$more',
+    );
+  }
+}
+
+class AdaptationRuntime {
+  final int minutes;
+  final String note;
+  const AdaptationRuntime(this.minutes, this.note);
 }
 
 class AdaptationCheck {

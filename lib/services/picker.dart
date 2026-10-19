@@ -249,7 +249,7 @@ class Picker {
           )) {
         return _Outcome(null, key);
       }
-      if (!ctx.anime && await _watchedAsAnime(cand.malId, ctx)) {
+      if (!ctx.anime && await _mangaSkipped(cand.malId, ctx)) {
         return _Outcome(null, key);
       }
       if (!await _passesDonghua(cand, ctx)) return _Outcome(null, key);
@@ -301,13 +301,25 @@ class Picker {
       return _Outcome(null, key);
     }
 
-    if (!ctx.anime && await _watchedAsAnime(entry.malId, ctx)) {
+    if (!ctx.anime && await _mangaSkipped(entry.malId, ctx)) {
       return _Outcome(null, key);
     }
 
     final title = _fromDetail(entry, ctx);
     if (!await _passesDonghua(title, ctx)) return _Outcome(null, key);
     return _Outcome(await _withColor(title, ctx), key);
+  }
+
+  /// Manga: skipped if "Exclude adapted manga" is on and its anime add up
+  /// to an hour, or if the user already watched an anime covering it all.
+  Future<bool> _mangaSkipped(int mangaId, _Context ctx) async {
+    if (ctx.settings.skipAdapted) {
+      const limit = SettingsStore.adaptedMinutes;
+      final runtime =
+          await _resolver.adaptationRuntime(mangaId, stopAt: limit);
+      if (runtime.minutes >= limit) return true;
+    }
+    return _watchedAsAnime(mangaId, ctx);
   }
 
   /// Manga: true if the user completed an anime that fully adapts it.

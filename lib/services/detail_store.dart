@@ -20,7 +20,7 @@ class DetailStore {
   static const _file = 'title_details.json';
 
   /// Bumped when the cached fields change; older caches are discarded.
-  static const _version = 3;
+  static const _version = 4;
   static const _malBase = 'https://api.myanimelist.net/v2';
   static const _maxParallel = 3;
 
@@ -141,7 +141,8 @@ class DetailStore {
     final kind = anime ? 'anime' : 'manga';
     final fields = 'id,title,alternative_titles,main_picture,mean,media_type,'
         'status,start_date,end_date,'
-        '${anime ? 'related_anime,related_manga,source' : 'related_manga'}';
+        '${anime ? 'related_anime,related_manga,source,num_episodes,'
+            'average_episode_duration' : 'related_manga'}';
     await _acquire();
     try {
       final res = await _client.get(

@@ -32,6 +32,10 @@ class TitleDetail {
   final String? source;
   final List<int> adaptedFrom;
 
+  /// Anime only: episode count (0 = unknown) and average episode length.
+  final int numEpisodes;
+  final int avgEpisodeSeconds;
+
   final DateTime fetched;
 
   const TitleDetail({
@@ -48,6 +52,8 @@ class TitleDetail {
     required this.relations,
     this.source,
     this.adaptedFrom = const [],
+    this.numEpisodes = 0,
+    this.avgEpisodeSeconds = 0,
     required this.fetched,
   });
 
@@ -78,6 +84,26 @@ class TitleDetail {
     if (day == null) return DateTime(y, m + 1, 0); // last day of month m
     return DateTime(y, m, day);
   }
+
+  /// Total runtime in minutes, estimating what MAL doesn't know yet
+  /// (announced or airing titles often have no episode count or length):
+  /// TV 12 × 24 min, movie 90 min, ONA/OVA/special 1 episode of a typical
+  /// length. Music videos, commercials and promos count as 0.
+  int get estimatedMinutes {
+    const typicalLength = {
+      'tv': 24, 'movie': 90, 'ona': 15, 'ova': 25,
+      'special': 20, 'tv_special': 30,
+    };
+    const typicalEpisodes = {'tv': 12};
+    final length = typicalLength[mediaType];
+    if (length == null) return 0; // music, cm, pv, unknown
+    final eps = numEpisodes > 0 ? numEpisodes : (typicalEpisodes[mediaType] ?? 1);
+    final mins = avgEpisodeSeconds > 0 ? avgEpisodeSeconds / 60 : length;
+    return (eps * mins).round();
+  }
+
+  /// True when the runtime above is a guess rather than MAL's numbers.
+  bool get runtimeEstimated => numEpisodes == 0 || avgEpisodeSeconds == 0;
 
   Iterable<int> relatedOfType(Set<String> types) =>
       relations.where((r) => types.contains(r.type)).map((r) => r.id);
@@ -129,6 +155,9 @@ class TitleDetail {
                     (r['node'] as Map)['id'] is int)
                   (r['node'] as Map)['id'] as int,
             ],
+      numEpisodes: anime ? (j['num_episodes'] as num?)?.toInt() ?? 0 : 0,
+      avgEpisodeSeconds:
+          anime ? (j['average_episode_duration'] as num?)?.toInt() ?? 0 : 0,
       fetched: DateTime.now(),
     );
   }
@@ -147,6 +176,8 @@ class TitleDetail {
         'r': [for (final r in relations) r.toJson()],
         if (source != null) 'src': source,
         if (adaptedFrom.isNotEmpty) 'adp': adaptedFrom,
+        if (numEpisodes > 0) 'eps': numEpisodes,
+        if (avgEpisodeSeconds > 0) 'dur': avgEpisodeSeconds,
         'f': fetched.millisecondsSinceEpoch,
       };
 
@@ -169,6 +200,8 @@ class TitleDetail {
         adaptedFrom: [
           for (final id in (j['adp'] as List?) ?? const []) id as int,
         ],
+        numEpisodes: j['eps'] as int? ?? 0,
+        avgEpisodeSeconds: j['dur'] as int? ?? 0,
         fetched: DateTime.fromMillisecondsSinceEpoch(j['f'] as int),
       );
 }

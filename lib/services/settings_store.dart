@@ -62,6 +62,11 @@ class SettingsStore extends ChangeNotifier {
   static const _kMode = 'set_pick_mode';
   static const _kFormats = 'set_formats';
   static const _kPlanned = 'set_planned_only';
+  static const _kSkipAdapted = 'set_skip_adapted';
+
+  /// Manga with this much anime (minutes, all adaptations combined) count
+  /// as adapted.
+  static const adaptedMinutes = 60;
 
   bool anime = true;
   Set<Completion> completion = Completion.values.toSet();
@@ -71,6 +76,7 @@ class SettingsStore extends ChangeNotifier {
       .where((f) => f != TitleFormat.special)
       .toSet();
   bool plannedOnly = false;
+  bool skipAdapted = false;
 
   SharedPreferences? _prefs;
 
@@ -79,6 +85,7 @@ class SettingsStore extends ChangeNotifier {
     anime = p.getBool(_kAnime) ?? anime;
     firstEntryOnly = p.getBool(_kFirst) ?? firstEntryOnly;
     plannedOnly = p.getBool(_kPlanned) ?? plannedOnly;
+    skipAdapted = p.getBool(_kSkipAdapted) ?? skipAdapted;
 
     final mode = p.getString(_kMode);
     pickMode = PickMode.values
@@ -155,6 +162,12 @@ class SettingsStore extends ChangeNotifier {
   void setPlannedOnly(bool value) {
     plannedOnly = value;
     _prefs?.setBool(_kPlanned, value);
+    notifyListeners();
+  }
+
+  void setSkipAdapted(bool value) {
+    skipAdapted = value;
+    _prefs?.setBool(_kSkipAdapted, value);
     notifyListeners();
   }
 
