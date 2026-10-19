@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -96,14 +97,14 @@ class MalApi {
     }
   }
 
-  /// Finds the user's profile picture. Tries, in order: Jikan's user
-  /// endpoints, then the MAL profile page itself, then MAL's image CDN by
-  /// user ID. Every candidate URL is checked to actually load before it is
-  /// used. Never throws; [AvatarResult.notes] says what each step found.
+  /// Finds the user's profile picture. MAL now serves pictures from signed
+  /// links like `cdn.myanimelist.net/s/common/userimages/<id>_225w?s=<sig>`,
+  /// which can't be built by hand, so the app reads the link off the user's
+  /// MAL profile page, with Jikan as a backup. Every candidate is checked to
+  /// actually load. Never throws; [AvatarResult.notes] says what each step found.
   Future<AvatarResult> fetchAvatar(String username) async {
     final notes = <String>[];
     final name = Uri.encodeComponent(username);
-    int? userId;
 
     Future<String?> verified(String? url, String source) async {
       if (url == null || url.isEmpty) return null;
@@ -112,42 +113,7 @@ class MalApi {
       return ok ? url : null;
     }
 
-    // 1 + 2. Jikan basic and full profile.
-    for (final path in ['users/$name', 'users/$name/full']) {
-      try {
-        final res = await _client
-            .get(Uri.parse('$_jikanBase/$path'), headers: _browserHeaders)
-            .timeout(_timeout);
-        if (res.statusCode != 200) {
-          notes.add('Jikan /$path: HTTP ${res.statusCode}');
-          continue;
-        }
-        final data = (jsonDecode(res.body) as Map<String, dynamic>)['data'];
-        if (data is! Map) {
-          notes.add('Jikan /$path: no data');
-          continue;
-        }
-        userId ??= (data['mal_id'] as num?)?.toInt();
-        final images = data['images'];
-        String? url;
-        if (images is Map) {
-          final jpg = images['jpg'];
-          final webp = images['webp'];
-          url = (jpg is Map ? jpg['image_url'] : null) as String? ??
-              (webp is Map ? webp['image_url'] : null) as String?;
-        }
-        if (url == null) {
-          notes.add('Jikan /$path: no picture in response');
-          continue;
-        }
-        final found = await verified(url, 'Jikan /$path');
-        if (found != null) return AvatarResult(found, notes);
-      } catch (e) {
-        notes.add('Jikan /$path: ${_short(e)}');
-      }
-    }
-
-    // 3. The MAL profile page.
+    // 1. The MAL profile page.
     try {
       final res = await _client
           .get(Uri.parse('https://myanimelist.net/profile/$name'),
@@ -156,42 +122,79 @@ class MalApi {
       if (res.statusCode != 200) {
         notes.add('Profile page: HTTP ${res.statusCode}');
       } else {
-        final body = res.body;
-        // The owner's picture sits in the "user-image" block; search from
-        // there so a friend's picture further down can't be picked up.
-        final at = body.indexOf('user-image');
-        final section = at >= 0 ? body.substring(at) : body;
-        final full = _userImage.firstMatch(section)?.group(0);
-        if (full != null) {
-          final url = full.replaceFirst(RegExp(r'/r/\d+x\d+/'), '/');
+        final url = _pickOwnerImage(res.body, username);
+        if (url == null) {
+          notes.add('Profile page: picture link not found');
+        } else {
           final found = await verified(url, 'Profile page');
           if (found != null) return AvatarResult(found, notes);
-        } else {
-          final id = RegExp(r'userimages/(\d+)').firstMatch(section)?.group(1);
-          if (id != null) userId ??= int.tryParse(id);
-          notes.add('Profile page: picture link not found'
-              '${at < 0 ? ' (no user-image block)' : ''}');
         }
       }
     } catch (e) {
       notes.add('Profile page: ${_short(e)}');
     }
 
-    // 4. Straight from MAL's CDN, if we learned the numeric user ID.
-    if (userId != null) {
-      for (final ext in ['jpg', 'png', 'gif', 'webp']) {
-        final url =
-            'https://cdn.myanimelist.net/images/userimages/$userId.$ext';
-        if (await _imageLoads(url)) {
-          notes.add('CDN by user ID: ok (.$ext)');
-          return AvatarResult(url, notes);
+    // 2. Jikan (often slow, so a shorter wait).
+    try {
+      final res = await _client
+          .get(Uri.parse('$_jikanBase/users/$name'), headers: _browserHeaders)
+          .timeout(const Duration(seconds: 8));
+      if (res.statusCode != 200) {
+        notes.add('Jikan: HTTP ${res.statusCode}');
+      } else {
+        final data = (jsonDecode(res.body) as Map<String, dynamic>)['data'];
+        final images = data is Map ? data['images'] : null;
+        String? url;
+        if (images is Map) {
+          final jpg = images['jpg'];
+          final webp = images['webp'];
+          url = (jpg is Map ? jpg['image_url'] : null) as String? ??
+              (webp is Map ? webp['image_url'] : null) as String?;
+        }
+        if (url == null) {
+          notes.add('Jikan: no picture in response');
+        } else {
+          final found = await verified(url, 'Jikan');
+          if (found != null) return AvatarResult(found, notes);
         }
       }
-      notes.add('CDN by user ID $userId: no image');
-    } else {
-      notes.add('CDN: user ID unknown');
+    } on TimeoutException {
+      notes.add('Jikan: timed out');
+    } catch (e) {
+      notes.add('Jikan: ${_short(e)}');
     }
+
     return AvatarResult(null, notes);
+  }
+
+  /// Any MAL user picture link, old (`/images/userimages/123.jpg`) or new
+  /// (`/s/common/userimages/<uuid>_225w?s=<sig>`) style.
+  static final _userImage = RegExp(
+    r'https://cdn\.myanimelist\.net/(?:r/\d+x\d+/)?(?:s/common|images)/userimages/[A-Za-z0-9_\-]+(?:\.(?:jpe?g|png|gif|webp))?(?:\?[^"\s<>]*)?',
+    caseSensitive: false,
+  );
+
+  static final _imgTag = RegExp(r'<img\b[^>]*>', caseSensitive: false);
+  static final _altAttr =
+      RegExp(r'''alt=["']([^"']*)["']''', caseSensitive: false);
+
+  /// Picks the owner's picture from the profile page HTML: preferably an
+  /// <img> whose alt text is the username, otherwise the first user picture
+  /// on the page (it's in the sidebar, above the friends list).
+  static String? _pickOwnerImage(String html, String username) {
+    String clean(String url) => url.replaceAll('&amp;', '&');
+
+    final user = username.toLowerCase();
+    for (final m in _imgTag.allMatches(html)) {
+      final tag = m.group(0)!;
+      final alt = _altAttr.firstMatch(tag)?.group(1)?.toLowerCase();
+      if (alt == user) {
+        final url = _userImage.firstMatch(tag)?.group(0);
+        if (url != null) return clean(url);
+      }
+    }
+    final first = _userImage.firstMatch(html)?.group(0);
+    return first == null ? null : clean(first);
   }
 
   static const _browserHeaders = {
@@ -202,11 +205,6 @@ class MalApi {
 
   /// Headers for showing MAL images; their CDN can refuse bare clients.
   static const imageHeaders = _browserHeaders;
-
-  static final _userImage = RegExp(
-    r'https://cdn\.myanimelist\.net/(?:r/\d+x\d+/)?images/userimages/\d+\.(?:jpe?g|png|gif|webp)(?:\?[^"\s<>]*)?',
-    caseSensitive: false,
-  );
 
   Future<bool> _imageLoads(String url) async {
     try {
