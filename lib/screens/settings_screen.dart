@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/list_entry.dart';
+import '../services/catalog_store.dart';
 import '../services/library_store.dart';
 import '../widgets/profile_avatar.dart';
 
@@ -63,6 +64,13 @@ class SettingsScreen extends StatelessWidget {
                 : _ConnectCard(),
           ),
           const SizedBox(height: 16),
+          const _SectionHeader('Catalog'),
+          ListenableBuilder(
+            listenable: CatalogStore.instance,
+            // ignore: prefer_const_constructors
+            builder: (context, _) => _CatalogCard(),
+          ),
+          const SizedBox(height: 16),
           const _SectionHeader('Recommendations'),
           Card(
             child: Column(
@@ -79,7 +87,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Watched, watching, and dropped titles are always excluded.',
+            'Completed, watching, on-hold, and dropped titles are always excluded.',
             textAlign: TextAlign.center,
             style: TextStyle(color: muted, fontSize: 13),
           ),
@@ -290,6 +298,77 @@ class _ConnectedCard extends StatelessWidget {
     if (d.inHours < 1) return '${d.inMinutes} min ago';
     if (d.inDays < 1) return '${d.inHours} h ago';
     return '${d.inDays} d ago';
+  }
+}
+
+/// Size and build progress of the candidate pool.
+class _CatalogCard extends StatelessWidget {
+  const _CatalogCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = CatalogStore.instance;
+    final muted = Colors.white.withValues(alpha: 0.65);
+    final done = c.detailsDone;
+    final total = c.total;
+
+    Widget stat(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label, style: TextStyle(color: muted, fontSize: 13)),
+              ),
+              Text(value, style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'The pool of top-ranked titles the app picks from. '
+              'It updates itself weekly.',
+              style: TextStyle(color: muted, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            stat('Anime', '${c.anime.length}'),
+            stat('Manga', '${c.manga.length}'),
+            stat('AniList details', total == 0 ? '-' : '$done / $total'),
+            stat('Donghua found', '${c.donghuaCount}'),
+            stat('Cover colors', '${c.colorCount}'),
+            stat('Rankings updated', _ConnectedCard._ago(c.rankingsUpdated)),
+            if (c.busy && c.phase != null) ...[
+              const SizedBox(height: 14),
+              Text(c.phase!, style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: c.progress,
+                  minHeight: 6,
+                ),
+              ),
+            ],
+            if (c.error != null) ...[
+              const SizedBox(height: 12),
+              _ErrorText(c.error!),
+            ],
+            const SizedBox(height: 14),
+            FilledButton.tonal(
+              onPressed: c.busy ? null : c.rebuild,
+              child: c.busy
+                  ? const _ButtonSpinner(label: 'Working…')
+                  : const Text('Update catalog now'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
