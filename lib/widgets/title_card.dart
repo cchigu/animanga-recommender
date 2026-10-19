@@ -422,31 +422,50 @@ class _Chip extends StatelessWidget {
   }
 }
 
-/// Shown when no title fits the current settings.
+/// Shown when nothing could be picked: either the settings filter out
+/// everything, or MyAnimeList / AniList couldn't be reached.
 class NoMatchCard extends StatelessWidget {
   final String reason;
   final Color accent;
   final VoidCallback onBack;
+  final VoidCallback onRetry;
+  final VoidCallback onSettings;
 
   const NoMatchCard({
     super.key,
     required this.reason,
     required this.accent,
     required this.onBack,
+    required this.onRetry,
+    required this.onSettings,
   });
+
+  bool get _offline {
+    final r = reason.toLowerCase();
+    return r.contains('reach') ||
+        r.contains('internet') ||
+        r.contains('connection') ||
+        r.contains('error 5') ||
+        r.contains('went wrong');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final offline = _offline;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.search_off_rounded, size: 64, color: accent),
+          Icon(
+            offline ? Icons.wifi_off_rounded : Icons.search_off_rounded,
+            size: 64,
+            color: accent,
+          ),
           const SizedBox(height: 16),
-          const Text(
-            'Nothing to recommend',
-            style: TextStyle(
+          Text(
+            offline ? 'Couldn\'t get a pick' : 'Nothing to recommend',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w800,
@@ -463,14 +482,37 @@ class NoMatchCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Try loosening a setting.',
+            offline
+                ? 'Check your connection and try again.'
+                : 'Try loosening a setting, or use "Why wasn\'t this picked?" '
+                    'in Settings.',
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.55),
               fontSize: 13,
             ),
           ),
           const SizedBox(height: 24),
-          FilledButton(onPressed: onBack, child: const Text('Back')),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton(onPressed: onBack, child: const Text('Back')),
+              if (offline)
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Try again'),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: onSettings,
+                  icon: const Icon(Icons.tune_rounded),
+                  label: const Text('Settings'),
+                ),
+            ],
+          ),
         ],
       ),
     );

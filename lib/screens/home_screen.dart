@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/catalog_title.dart';
+import '../services/catalog_store.dart';
 import '../services/detail_store.dart';
 import '../services/library_store.dart';
 import '../services/mal_api.dart';
@@ -86,6 +87,133 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _backToIdle() => setState(() => _phase = _Phase.idle);
 
+  /// The idle screen: welcome when no account is connected, otherwise the
+  /// Tap here circle with the current setup and catalog status under it.
+  Widget _buildIdle() {
+    final library = LibraryStore.instance;
+    final catalog = CatalogStore.instance;
+    final muted = Colors.white.withValues(alpha: 0.75);
+
+    if (!library.isConnected) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.auto_awesome_rounded, size: 64, color: _palette.accent),
+            const SizedBox(height: 20),
+            const Text(
+              'One tap, one pick',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Connect your MyAnimeList account and Animanga Recommender '
+              'picks your next anime or manga from what you haven\'t seen, '
+              'following your settings.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted, fontSize: 15, height: 1.4),
+            ),
+            const SizedBox(height: 28),
+            FilledButton.icon(
+              onPressed: _openSettings,
+              style: FilledButton.styleFrom(
+                backgroundColor: _palette.accent,
+                foregroundColor: Colors.black,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+                textStyle:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              icon: const Icon(Icons.link_rounded),
+              label: const Text('Connect MyAnimeList'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final building = catalog.isEmpty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Opacity(
+          opacity: building ? 0.45 : 1,
+          child: TapCircle(
+            accent: _palette.accent,
+            label: building ? 'Hang on…' : 'Tap here',
+            onTap: building
+                ? () => ScaffoldMessenger.of(context)
+                  ..hideCurrentSnackBar()
+                  ..showSnackBar(const SnackBar(
+                      content: Text('The catalog is still being built.')))
+                : _startCountdown,
+          ),
+        ),
+        const SizedBox(height: 36),
+        Text(
+          SettingsStore.instance.summary,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: muted,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (building) ...[
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Column(
+              children: [
+                Text(
+                  catalog.error != null
+                      ? 'Couldn\'t build the catalog: ${catalog.error}'
+                      : catalog.phase ?? 'Building your catalog…',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: muted, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                if (catalog.error == null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: catalog.busy ? catalog.progress : null,
+                      minHeight: 5,
+                      color: _palette.accent,
+                    ),
+                  )
+                else
+                  TextButton(
+                    onPressed: catalog.busy ? null : catalog.rebuild,
+                    child: const Text('Try again'),
+                  ),
+              ],
+            ),
+          ),
+        ] else if (library.error != null) ...[
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              'Couldn\'t refresh your MAL list, so picks use the last saved '
+              'copy.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   void _openSettings() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -137,33 +265,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCenter() {
     switch (_phase) {
       case _Phase.idle:
-        return Column(
+        return ListenableBuilder(
           key: const ValueKey('tap'),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TapCircle(accent: _palette.accent, onTap: _startCountdown),
-            const SizedBox(height: 36),
-            ListenableBuilder(
-              listenable: Listenable.merge(
-                [LibraryStore.instance, SettingsStore.instance],
-              ),
-              builder: (context, _) {
-                final store = LibraryStore.instance;
-                final text = store.isConnected
-                    ? SettingsStore.instance.summary
-                    : 'Tap your profile icon to connect MyAnimeList';
-                return Text(
-                  text,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.75),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                );
-              },
-            ),
-          ],
+          listenable: Listenable.merge([
+            LibraryStore.instance,
+            SettingsStore.instance,
+            CatalogStore.instance,
+          ]),
+          builder: (context, _) => _buildIdle(),
         );
       case _Phase.counting:
         return Countdown(
@@ -221,6 +330,8 @@ class _HomeScreenState extends State<HomeScreen> {
           reason: _result?.emptyReason ?? 'No titles match your settings.',
           accent: _palette.accent,
           onBack: _backToIdle,
+          onRetry: _startCountdown,
+          onSettings: _openSettings,
         );
     }
   }

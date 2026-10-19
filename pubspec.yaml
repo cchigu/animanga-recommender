@@ -2,7 +2,7 @@ name: animanga_recommender
 description: "Animanga Recommender - one tap, one anime or manga pick from your MyAnimeList data."
 publish_to: 'none'
 
-version: 0.7.0+7
+version: 1.0.0+8
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
