@@ -249,6 +249,13 @@ class _ConnectedCard extends StatelessWidget {
               const SizedBox(height: 12),
               _ErrorText(store.error!),
             ],
+            if (store.avatarUrl == null && store.avatarNotes.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Profile picture not found:\n${store.avatarNotes.join('\n')}',
+                style: TextStyle(color: muted, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [

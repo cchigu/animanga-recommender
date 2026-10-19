@@ -96,59 +96,140 @@ class MalApi {
     }
   }
 
-  /// Profile picture URL, or null if the user has none or MAL can't be read.
-  /// Tries Jikan first, then the MAL profile page itself.
-  /// Never throws: a missing picture shouldn't block connecting.
-  Future<String?> fetchAvatarUrl(String username) async {
-    return await _avatarFromJikan(username) ??
-        await _avatarFromProfilePage(username);
-  }
+  /// Finds the user's profile picture. Tries, in order: Jikan's user
+  /// endpoints, then the MAL profile page itself, then MAL's image CDN by
+  /// user ID. Every candidate URL is checked to actually load before it is
+  /// used. Never throws; [AvatarResult.notes] says what each step found.
+  Future<AvatarResult> fetchAvatar(String username) async {
+    final notes = <String>[];
+    final name = Uri.encodeComponent(username);
+    int? userId;
 
-  Future<String?> _avatarFromJikan(String username) async {
+    Future<String?> verified(String? url, String source) async {
+      if (url == null || url.isEmpty) return null;
+      final ok = await _imageLoads(url);
+      notes.add('$source: ${ok ? 'ok' : 'image did not load'}');
+      return ok ? url : null;
+    }
+
+    // 1 + 2. Jikan basic and full profile.
+    for (final path in ['users/$name', 'users/$name/full']) {
+      try {
+        final res = await _client
+            .get(Uri.parse('$_jikanBase/$path'), headers: _browserHeaders)
+            .timeout(_timeout);
+        if (res.statusCode != 200) {
+          notes.add('Jikan /$path: HTTP ${res.statusCode}');
+          continue;
+        }
+        final data = (jsonDecode(res.body) as Map<String, dynamic>)['data'];
+        if (data is! Map) {
+          notes.add('Jikan /$path: no data');
+          continue;
+        }
+        userId ??= (data['mal_id'] as num?)?.toInt();
+        final images = data['images'];
+        String? url;
+        if (images is Map) {
+          final jpg = images['jpg'];
+          final webp = images['webp'];
+          url = (jpg is Map ? jpg['image_url'] : null) as String? ??
+              (webp is Map ? webp['image_url'] : null) as String?;
+        }
+        if (url == null) {
+          notes.add('Jikan /$path: no picture in response');
+          continue;
+        }
+        final found = await verified(url, 'Jikan /$path');
+        if (found != null) return AvatarResult(found, notes);
+      } catch (e) {
+        notes.add('Jikan /$path: ${_short(e)}');
+      }
+    }
+
+    // 3. The MAL profile page.
     try {
       final res = await _client
-          .get(Uri.parse('$_jikanBase/users/${Uri.encodeComponent(username)}'))
+          .get(Uri.parse('https://myanimelist.net/profile/$name'),
+              headers: _browserHeaders)
           .timeout(_timeout);
-      if (res.statusCode != 200) return null;
-      final data = (jsonDecode(res.body) as Map<String, dynamic>)['data']
-          as Map<String, dynamic>?;
-      final images = data?['images'] as Map<String, dynamic>?;
-      final url = (images?['jpg']?['image_url'] ??
-          images?['webp']?['image_url']) as String?;
-      return (url == null || url.isEmpty) ? null : url;
-    } catch (_) {
-      return null;
+      if (res.statusCode != 200) {
+        notes.add('Profile page: HTTP ${res.statusCode}');
+      } else {
+        final body = res.body;
+        // The owner's picture sits in the "user-image" block; search from
+        // there so a friend's picture further down can't be picked up.
+        final at = body.indexOf('user-image');
+        final section = at >= 0 ? body.substring(at) : body;
+        final full = _userImage.firstMatch(section)?.group(0);
+        if (full != null) {
+          final url = full.replaceFirst(RegExp(r'/r/\d+x\d+/'), '/');
+          final found = await verified(url, 'Profile page');
+          if (found != null) return AvatarResult(found, notes);
+        } else {
+          final id = RegExp(r'userimages/(\d+)').firstMatch(section)?.group(1);
+          if (id != null) userId ??= int.tryParse(id);
+          notes.add('Profile page: picture link not found'
+              '${at < 0 ? ' (no user-image block)' : ''}');
+        }
+      }
+    } catch (e) {
+      notes.add('Profile page: ${_short(e)}');
     }
+
+    // 4. Straight from MAL's CDN, if we learned the numeric user ID.
+    if (userId != null) {
+      for (final ext in ['jpg', 'png', 'gif', 'webp']) {
+        final url =
+            'https://cdn.myanimelist.net/images/userimages/$userId.$ext';
+        if (await _imageLoads(url)) {
+          notes.add('CDN by user ID: ok (.$ext)');
+          return AvatarResult(url, notes);
+        }
+      }
+      notes.add('CDN by user ID $userId: no image');
+    } else {
+      notes.add('CDN: user ID unknown');
+    }
+    return AvatarResult(null, notes);
   }
+
+  static const _browserHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36',
+    'Accept': '*/*',
+  };
+
+  /// Headers for showing MAL images; their CDN can refuse bare clients.
+  static const imageHeaders = _browserHeaders;
 
   static final _userImage = RegExp(
     r'https://cdn\.myanimelist\.net/(?:r/\d+x\d+/)?images/userimages/\d+\.(?:jpe?g|png|gif|webp)(?:\?[^"\s<>]*)?',
     caseSensitive: false,
   );
 
-  Future<String?> _avatarFromProfilePage(String username) async {
+  Future<bool> _imageLoads(String url) async {
     try {
-      final res = await _client.get(
-        Uri.parse(
-            'https://myanimelist.net/profile/${Uri.encodeComponent(username)}'),
-        headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Linux; Android 14) AnimangaRecommender/0.2',
-        },
-      ).timeout(_timeout);
-      if (res.statusCode != 200) return null;
-      // The owner's picture sits in the "user-image" block; search from there
-      // so a friend's picture further down the page can't be picked up.
-      final body = res.body;
-      final at = body.indexOf('user-image');
-      final match = _userImage
-          .firstMatch(at >= 0 ? body.substring(at) : body)
-          ?.group(0);
-      if (match == null) return null;
-      // Ask for the full-size image instead of a resized thumbnail.
-      return match.replaceFirst(RegExp(r'/r/\d+x\d+/'), '/');
+      final res = await _client
+          .get(Uri.parse(url), headers: _browserHeaders)
+          .timeout(_timeout);
+      final type = res.headers['content-type'] ?? '';
+      return res.statusCode == 200 &&
+          type.startsWith('image/') &&
+          res.bodyBytes.isNotEmpty;
     } catch (_) {
-      return null;
+      return false;
     }
   }
+
+  static String _short(Object e) {
+    final s = e.toString();
+    return s.length > 80 ? '${s.substring(0, 80)}…' : s;
+  }
+}
+
+class AvatarResult {
+  final String? url;
+  final List<String> notes;
+  const AvatarResult(this.url, this.notes);
 }

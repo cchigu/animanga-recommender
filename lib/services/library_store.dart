@@ -26,6 +26,9 @@ class LibraryStore extends ChangeNotifier {
 
   String? username;
   String? avatarUrl;
+
+  /// What each profile-picture lookup step found on the last sync.
+  List<String> avatarNotes = const [];
   DateTime? lastSynced;
   List<ListEntry> anime = const [];
   List<ListEntry> manga = const [];
@@ -104,7 +107,9 @@ class LibraryStore extends ChangeNotifier {
         _api.fetchList(user, anime: true),
         _api.fetchList(user, anime: false),
       ]);
-      final avatar = await _api.fetchAvatarUrl(user);
+      final avatarResult = await _api.fetchAvatar(user);
+      final avatar = avatarResult.url;
+      avatarNotes = avatarResult.notes;
 
       // Keep the old picture if Jikan hiccups, unless the account changed.
       final sameUser = user.toLowerCase() == username?.toLowerCase();

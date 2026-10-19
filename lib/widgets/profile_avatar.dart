@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../services/mal_api.dart';
+
 /// Top-right profile button. Shows the MAL profile picture once an account
 /// is connected (Milestone 2); until then a placeholder icon.
 class ProfileAvatar extends StatelessWidget {
@@ -39,8 +41,11 @@ class ProfileAvatar extends StatelessWidget {
               : Image.network(
                   imageUrl!,
                   fit: BoxFit.cover,
+                  headers: MalApi.imageHeaders,
+                  // A different icon than "no picture", so a failed load
+                  // is easy to tell apart.
                   errorBuilder: (_, __, ___) => const Icon(
-                    Icons.person_rounded,
+                    Icons.broken_image_outlined,
                     color: Colors.white,
                     size: 26,
                   ),
