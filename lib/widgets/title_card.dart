@@ -132,7 +132,7 @@ class TitleCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Picked from $poolSize eligible titles',
+              'Picked from $poolSize candidates',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 13,

@@ -12,7 +12,7 @@ import '../widgets/tap_circle.dart';
 import '../widgets/title_card.dart';
 import 'settings_screen.dart';
 
-enum _Phase { idle, counting, revealed, empty }
+enum _Phase { idle, counting, searching, revealed, empty }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,29 +27,55 @@ class _HomeScreenState extends State<HomeScreen> {
   CatalogTitle? get _title => _result?.title;
   BackdropPalette _palette = BackdropPalette.initial;
 
-  /// The pick is made when the countdown starts and revealed when it ends.
+  bool _countdownDone = false;
+  int _tapId = 0; // ignores results from an earlier tap
+
+  /// The search starts with the countdown; the reveal waits for both.
   void _startCountdown() {
-    final result = Picker.instance.pick();
-    // Load the cover during the countdown so it's ready at the reveal.
-    final url = result.title?.pictureUrl;
-    if (url != null) {
-      precacheImage(
-        NetworkImage(url, headers: MalApi.imageHeaders),
-        context,
-        onError: (_, __) {},
-      );
-    }
+    final tap = ++_tapId;
     setState(() {
+      _result = null;
+      _countdownDone = false;
+      _phase = _Phase.counting;
+    });
+
+    Picker.instance.pick().then((result) {
+      if (!mounted || tap != _tapId) return;
+      // Load the cover now so it's ready at the reveal.
+      final url = result.title?.pictureUrl;
+      if (url != null) {
+        precacheImage(
+          NetworkImage(url, headers: MalApi.imageHeaders),
+          context,
+          onError: (_, __) {},
+        );
+      }
       _result = result;
-      _phase = result.title == null ? _Phase.empty : _Phase.counting;
+      _maybeFinish();
+    }).catchError((Object e) {
+      if (!mounted || tap != _tapId) return;
+      _result = PickResult(null, 0, 'Something went wrong: $e');
+      _maybeFinish();
     });
   }
 
-  void _reveal() {
-    final pick = _title!;
+  void _onCountdownFinished() {
+    _countdownDone = true;
+    _maybeFinish();
+  }
+
+  void _maybeFinish() {
+    if (!_countdownDone) return;
+    final result = _result;
     setState(() {
-      _palette = BackdropPalette.from(pick.color ?? kDefaultAccent);
-      _phase = _Phase.revealed;
+      if (result == null) {
+        _phase = _Phase.searching;
+      } else if (result.title == null) {
+        _phase = _Phase.empty;
+      } else {
+        _palette = BackdropPalette.from(result.title!.color ?? kDefaultAccent);
+        _phase = _Phase.revealed;
+      }
     });
   }
 
@@ -138,7 +164,38 @@ class _HomeScreenState extends State<HomeScreen> {
         return Countdown(
           key: const ValueKey('countdown'),
           accent: _palette.accent,
-          onFinished: _reveal,
+          onFinished: _onCountdownFinished,
+        );
+      case _Phase.searching:
+        return Column(
+          key: const ValueKey('searching'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 56,
+              height: 56,
+              child: CircularProgressIndicator(
+                strokeWidth: 5,
+                color: _palette.accent,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Checking franchises…',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.8),
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'First picks take longer; later ones are cached.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 13,
+              ),
+            ),
+          ],
         );
       case _Phase.revealed:
         return SingleChildScrollView(
