@@ -41,6 +41,18 @@ class Franchise {
 class FranchiseResolver {
   static const _chainTypes = {'sequel', 'prequel'};
 
+  /// Formats that count as extras rather than main entries.
+  static const extraTypes = {
+    'movie', 'ova', 'special', 'tv_special', 'music', 'cm', 'pv',
+  };
+
+  /// Links from an extra to the series it belongs to (everything except
+  /// sequel/prequel, and "character", which only means shared characters).
+  static const _belongsToTypes = {
+    'parent_story', 'side_story', 'spin_off', 'alternative_version',
+    'alternative_setting', 'summary', 'full_story', 'other',
+  };
+
   /// Largest chain we'll walk; long-running franchises fit comfortably.
   static const _maxMembers = 60;
 
@@ -92,5 +104,41 @@ class FranchiseResolver {
       }
     }
     return chain;
+  }
+
+  /// True for a movie / OVA / special that isn't a sequel or prequel of a
+  /// main entry (its own sequel/prequel chain is all extras), when the user
+  /// has already completed or is watching a main entry it belongs to.
+  /// [chain] is the title's sequel/prequel chain if already known.
+  Future<bool> isExtraOfWatchedSeries(
+    int id, {
+    required bool anime,
+    required bool Function(int malId) watched,
+    Franchise? chain,
+  }) async {
+    final own = chain ?? await chainOf(id, anime: anime);
+    if (own == null) return false;
+    final self = own.members.where((m) => m.malId == id).firstOrNull;
+    if (self == null || !extraTypes.contains(self.mediaType)) return false;
+
+    // A sequel/prequel of a main entry is part of the main story: keep it.
+    if (own.members.any((m) => !extraTypes.contains(m.mediaType))) {
+      return false;
+    }
+
+    final ownIds = {for (final m in own.members) m.malId};
+    final related = <int>{
+      for (final m in own.members)
+        for (final r in m.relatedOfType(_belongsToTypes))
+          if (!ownIds.contains(r)) r,
+    };
+    for (final r in related.take(6)) {
+      final series = await chainOf(r, anime: anime);
+      if (series == null) continue;
+      final mains = series.members
+          .where((m) => !extraTypes.contains(m.mediaType));
+      if (mains.any((m) => watched(m.malId))) return true;
+    }
+    return false;
   }
 }

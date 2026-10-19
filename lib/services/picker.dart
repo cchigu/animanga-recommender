@@ -234,6 +234,14 @@ class Picker {
           return _Outcome(null, key);
         }
       }
+      if (FranchiseResolver.extraTypes.contains(cand.mediaType) &&
+          await _resolver.isExtraOfWatchedSeries(
+            cand.malId,
+            anime: ctx.anime,
+            watched: ctx.watched,
+          )) {
+        return _Outcome(null, key);
+      }
       if (!await _passesDonghua(cand, ctx)) return _Outcome(null, key);
       return _Outcome(await _withColor(cand, ctx), key);
     }
@@ -272,6 +280,16 @@ class Picker {
       break;
     }
     if (entry == null) return _Outcome(null, key);
+
+    if (FranchiseResolver.extraTypes.contains(entry.mediaType) &&
+        await _resolver.isExtraOfWatchedSeries(
+          entry.malId,
+          anime: ctx.anime,
+          watched: ctx.watched,
+          chain: chain,
+        )) {
+      return _Outcome(null, key);
+    }
 
     final title = _fromDetail(entry, ctx);
     if (!await _passesDonghua(title, ctx)) return _Outcome(null, key);
@@ -384,6 +402,12 @@ class _Context {
     required this.allowDonghua,
     required this.settings,
   });
+
+  /// Completed or currently watching/reading.
+  bool watched(int malId) {
+    final s = listed[malId]?.userStatus;
+    return s == UserStatus.completed || s == UserStatus.current;
+  }
 }
 
 class _Outcome {
