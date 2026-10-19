@@ -332,6 +332,17 @@ class Picker {
       final runtime =
           await _resolver.adaptationRuntime(mangaId, stopAt: limit);
       if (runtime.minutes >= limit) return true;
+    } else {
+      final check = await _resolver.unwatchedAnime(mangaId, seen: ctx.seen);
+      switch (check.status) {
+        case UnwatchedStatus.unwatchedBlocked:
+          return true;
+        case UnwatchedStatus.unwatchedOk:
+          if (!ctx.settings.includeUnwatchedAnime) return true;
+        case UnwatchedStatus.noAnime:
+        case UnwatchedStatus.watchedSome:
+          break;
+      }
     }
     return _watchedAsAnime(mangaId, ctx);
   }
@@ -464,6 +475,14 @@ class _Context {
           e.userStatus == UserStatus.current)
         FranchiseResolver.normalizeTitle(e.title): (id: e.malId, title: e.title),
   };
+
+  /// Manga mode: anime you've started (anything on your anime list except
+  /// Plan to Watch).
+  late final Set<int> _startedAnime = {
+    for (final e in LibraryStore.instance.anime)
+      if (e.userStatus != UserStatus.planned) e.malId,
+  };
+  bool seen(int animeMalId) => _startedAnime.contains(animeMalId);
 
   /// Completed or currently watching/reading.
   bool watched(int malId) {

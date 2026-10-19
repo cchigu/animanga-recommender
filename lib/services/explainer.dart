@@ -242,6 +242,30 @@ class Explainer {
       add(null, 'Couldn\'t check alternative versions: ${e.message}');
     }
 
+    if (!anime && !s.skipAdapted) {
+      try {
+        final started = {
+          for (final e in LibraryStore.instance.anime)
+            if (e.userStatus != UserStatus.planned) e.malId,
+        };
+        final check = await _resolver.unwatchedAnime(t.malId,
+            seen: started.contains);
+        final bool? ok = switch (check.status) {
+          UnwatchedStatus.noAnime => null,
+          UnwatchedStatus.watchedSome => null,
+          UnwatchedStatus.unwatchedOk => s.includeUnwatchedAnime,
+          UnwatchedStatus.unwatchedBlocked => false,
+        };
+        final suffix = check.status == UnwatchedStatus.unwatchedOk &&
+                !s.includeUnwatchedAnime
+            ? ' "Include manga with unwatched anime" is off.'
+            : '';
+        add(ok, '${check.note}$suffix');
+      } on MalException catch (e) {
+        add(null, 'Couldn\'t check unwatched anime: ${e.message}');
+      }
+    }
+
     if (!anime && s.skipAdapted) {
       try {
         const limit = SettingsStore.adaptedMinutes;

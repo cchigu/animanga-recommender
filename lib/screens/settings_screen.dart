@@ -429,6 +429,17 @@ class _RecommendationSettings extends StatelessWidget {
                     'announced ones. Music videos and commercials don\'t count.'),
                 onChanged: s.setSkipAdapted,
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s.includeUnwatchedAnime && !s.skipAdapted,
+                title: const Text('Include manga with unwatched anime'),
+                subtitle: Text(s.skipAdapted
+                    ? 'Not used while "Exclude adapted manga" is on.'
+                    : 'For manga whose anime you haven\'t watched: show it only '
+                        'if the anime fully adapts it, or ended over 6 years ago '
+                        'with nothing new announced. Off skips them all.'),
+                onChanged: s.skipAdapted ? null : s.setIncludeUnwatchedAnime,
+              ),
               gap,
             ],
 

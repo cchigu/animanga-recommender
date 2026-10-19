@@ -63,6 +63,7 @@ class SettingsStore extends ChangeNotifier {
   static const _kFormats = 'set_formats';
   static const _kPlanned = 'set_planned_only';
   static const _kSkipAdapted = 'set_skip_adapted';
+  static const _kUnwatchedAnime = 'set_include_unwatched_anime';
 
   /// Manga with this much anime (minutes, all adaptations combined) count
   /// as adapted.
@@ -77,6 +78,7 @@ class SettingsStore extends ChangeNotifier {
       .toSet();
   bool plannedOnly = false;
   bool skipAdapted = false;
+  bool includeUnwatchedAnime = true;
 
   SharedPreferences? _prefs;
 
@@ -86,6 +88,8 @@ class SettingsStore extends ChangeNotifier {
     firstEntryOnly = p.getBool(_kFirst) ?? firstEntryOnly;
     plannedOnly = p.getBool(_kPlanned) ?? plannedOnly;
     skipAdapted = p.getBool(_kSkipAdapted) ?? skipAdapted;
+    includeUnwatchedAnime =
+        p.getBool(_kUnwatchedAnime) ?? includeUnwatchedAnime;
 
     final mode = p.getString(_kMode);
     pickMode = PickMode.values
@@ -168,6 +172,12 @@ class SettingsStore extends ChangeNotifier {
   void setSkipAdapted(bool value) {
     skipAdapted = value;
     _prefs?.setBool(_kSkipAdapted, value);
+    notifyListeners();
+  }
+
+  void setIncludeUnwatchedAnime(bool value) {
+    includeUnwatchedAnime = value;
+    _prefs?.setBool(_kUnwatchedAnime, value);
     notifyListeners();
   }
 

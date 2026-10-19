@@ -428,6 +428,101 @@ class FranchiseResolver {
     }
     return null;
   }
+
+  /// Manga only: how the manga's anime adaptations relate to the user.
+  /// Only real anime count (60+ min of TV/ONA/OVA/movie/special in total).
+  Future<UnwatchedAnimeCheck> unwatchedAnime(
+    int mangaId, {
+    required bool Function(int animeMalId) seen,
+  }) async {
+    final adaptations = await _store.animeAdaptationsOf(mangaId);
+    if (adaptations.isEmpty) {
+      return const UnwatchedAnimeCheck(UnwatchedStatus.noAnime,
+          'No anime adaptation.');
+    }
+
+    final members = <int, TitleDetail>{};
+    for (final id in adaptations.take(6)) {
+      if (members.containsKey(id)) continue;
+      final chain = await chainOf(id, anime: true);
+      if (chain == null) continue;
+      for (final m in chain.members) {
+        if (m.estimatedMinutes > 0) members[m.malId] = m;
+      }
+    }
+    final minutes =
+        members.values.fold<int>(0, (sum, m) => sum + m.estimatedMinutes);
+    if (minutes < SettingsStore.adaptedMinutes) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.noAnime,
+          'Anime adaptations are only $minutes min, so they don\'t count.');
+    }
+
+    final watchedOne =
+        members.values.where((m) => seen(m.malId)).firstOrNull;
+    if (watchedOne != null) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.watchedSome,
+          'You\'ve seen some of the anime ("${watchedOne.title}").');
+    }
+
+    final name = (members.values.toList()
+          ..sort((a, b) => a.sortDate.compareTo(b.sortDate)))
+        .first
+        .title;
+    final upcoming = members.values.where((m) =>
+        m.releaseStatus == 'currently_airing' || !m.isReleased);
+
+    // When did the last real entry end?
+    DateTime? latest;
+    for (final m in members.values) {
+      final end = m.endedOn;
+      if (end != null && (latest == null || end.isAfter(latest))) latest = end;
+    }
+
+    // Fully adapted: the manga finished and the anime caught up to it.
+    final manga = await _store.get(mangaId, anime: false);
+    final mangaEnd = manga?.endedOn;
+    if (upcoming.isEmpty &&
+        manga != null &&
+        manga.isFinished &&
+        mangaEnd != null &&
+        latest != null &&
+        coversSource(latest, mangaEnd)) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedOk,
+          'Unwatched anime "$name" fully adapts it (anime ended '
+          '${_ymd(latest)}, manga ${_ymd(mangaEnd)}).');
+    }
+
+    if (upcoming.isNotEmpty) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
+          'Unwatched anime "$name" has more airing or announced '
+          '("${upcoming.first.title}").');
+    }
+    if (latest == null) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
+          'Unwatched anime "$name" has no end date.');
+    }
+    if (DateTime.now().difference(latest) >= Franchise.recentEndWindow) {
+      return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedOk,
+          'Unwatched anime "$name" ended ${_ymd(latest)}, over 6 years ago, '
+          'with nothing new announced.');
+    }
+    return UnwatchedAnimeCheck(UnwatchedStatus.unwatchedBlocked,
+        'Unwatched anime "$name" ended ${_ymd(latest)}, within 6 years, '
+        'without covering the whole manga, so more may come.');
+  }
+}
+
+enum UnwatchedStatus {
+  noAnime, // no real anime adaptation
+  watchedSome, // you've seen at least part of it
+  unwatchedOk, // unwatched, but fully adapted or long dead
+  unwatchedBlocked, // unwatched, and more anime may come
+}
+
+class UnwatchedAnimeCheck {
+  final UnwatchedStatus status;
+  final String note;
+  const UnwatchedAnimeCheck(this.status, this.note);
 }
 
 class AdaptationRuntime {
