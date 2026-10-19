@@ -85,6 +85,16 @@ class Franchise {
 class FranchiseResolver {
   static const _chainTypes = {'sequel', 'prequel'};
 
+  /// MAL's end date for a manga is often its last volume's release, months
+  /// after the final chapter, so an anime that ended up to this long before
+  /// still counts as covering it.
+  static const adaptationSlack = Duration(days: 183);
+
+  /// True if an anime ending on [animeEnd] can cover a source that ended on
+  /// [sourceEnd].
+  static bool coversSource(DateTime animeEnd, DateTime sourceEnd) =>
+      !animeEnd.isBefore(sourceEnd.subtract(adaptationSlack));
+
   /// Formats that count as extras rather than main entries.
   static const extraTypes = {
     'movie', 'ova', 'special', 'tv_special', 'music', 'cm', 'pv',
@@ -151,10 +161,10 @@ class FranchiseResolver {
     String verdict(bool finished, DateTime? sourceEnd, String what) {
       if (!finished) return '$what is still running.';
       if (sourceEnd == null) return '$what has no end date.';
-      return animeEnd.isBefore(sourceEnd)
-          ? '$what ended ${_ymd(sourceEnd)}, after the anime '
-              '(${_ymd(animeEnd)}).'
-          : '$what ended ${_ymd(sourceEnd)}; the anime finished after it '
+      return coversSource(animeEnd, sourceEnd)
+          ? '$what ended ${_ymd(sourceEnd)}; the anime finished '
+              '${_ymd(animeEnd)}, close enough to cover it.'
+          : '$what ended ${_ymd(sourceEnd)}, well after the anime '
               '(${_ymd(animeEnd)}).';
     }
 
@@ -173,7 +183,7 @@ class FranchiseResolver {
         final original = sources.first;
         final end = original.endedOn;
         final full =
-            original.isFinished && end != null && !animeEnd.isBefore(end);
+            original.isFinished && end != null && coversSource(animeEnd, end);
         return (full, 'Source "${original.title}" ($via): '
             '${verdict(original.isFinished, end, 'it')}');
       } catch (_) {
@@ -197,7 +207,7 @@ class FranchiseResolver {
       if (ani.hasSourceWork) {
         final full = ani.sourceFinished &&
             ani.sourceEnd != null &&
-            !animeEnd.isBefore(ani.sourceEnd!);
+            coversSource(animeEnd, ani.sourceEnd!);
         return (full, 'Source "${ani.sourceTitle ?? '?'}" (AniList): '
             '${verdict(ani.sourceFinished, ani.sourceEnd, 'it')}');
       }
@@ -278,35 +288,72 @@ class FranchiseResolver {
     return false;
   }
 
-  /// Manga only: the title of a finished anime that fully adapts [mangaId]
-  /// and that the user has completed, or null if there isn't one.
-  /// "Fully adapts" = the manga has finished and the anime's last main
-  /// entry ended on or after the manga's end.
-  Future<String?> watchedFullAdaptation(
+  /// Manga only: checks whether the user has completed a finished anime
+  /// that fully adapts [mangaId]: the manga has finished and the anime's
+  /// last main entry ended no more than [adaptationSlack] before it.
+  Future<AdaptationCheck> watchedFullAdaptation(
     int mangaId, {
     required bool Function(int animeMalId) completed,
   }) async {
     final adaptations = await _store.animeAdaptationsOf(mangaId);
+    if (adaptations.isEmpty) {
+      return const AdaptationCheck(null, 'No anime adaptation found.');
+    }
     // Cheap check first: has the user completed any of them?
     final seen = [for (final id in adaptations) if (completed(id)) id];
-    if (seen.isEmpty) return null;
+    if (seen.isEmpty) {
+      return AdaptationCheck(null, 'Has ${adaptations.length} anime '
+          'adaptation${adaptations.length == 1 ? '' : 's'}, none completed '
+          'by you.');
+    }
 
     final manga = await _store.get(mangaId, anime: false);
-    if (manga == null || !manga.isFinished) return null;
+    if (manga == null) {
+      return const AdaptationCheck(null, 'MAL has no details for the manga.');
+    }
+    if (!manga.isFinished) {
+      return const AdaptationCheck(null, 'The manga is still running, so no '
+          'anime can cover all of it.');
+    }
     final mangaEnd = manga.endedOn;
-    if (mangaEnd == null) return null;
+    if (mangaEnd == null) {
+      return const AdaptationCheck(null, 'The manga has no end date on MAL.');
+    }
 
+    final notes = <String>[];
     for (final id in seen.take(3)) {
       final chain = await chainOf(id, anime: true);
       if (chain == null) continue;
       final mains = chain.mainByDate.where((m) => m.isReleased).toList();
       if (mains.isEmpty) continue;
-      if (!mains.every((m) => m.isFinished)) continue; // anime still going
-      if (!mains.every((m) => completed(m.malId))) continue; // not all seen
+      final name = mains.first.title;
+      if (!mains.every((m) => m.isFinished)) {
+        notes.add('"$name" is still airing.');
+        continue;
+      }
+      final missing = mains.where((m) => !completed(m.malId)).toList();
+      if (missing.isNotEmpty) {
+        notes.add('You haven\'t completed "${missing.first.title}".');
+        continue;
+      }
       final animeEnd = chain.latestMainEnd;
-      if (animeEnd == null || animeEnd.isBefore(mangaEnd)) continue;
-      return mains.first.title;
+      if (animeEnd == null) continue;
+      if (!coversSource(animeEnd, mangaEnd)) {
+        notes.add('"$name" ended ${_ymd(animeEnd)}, well before the manga '
+            '(${_ymd(mangaEnd)}).');
+        continue;
+      }
+      return AdaptationCheck(name, '"$name" ended ${_ymd(animeEnd)}; the '
+          'manga ended ${_ymd(mangaEnd)}.');
     }
-    return null;
+    return AdaptationCheck(
+        null, notes.isEmpty ? 'Couldn\'t check the anime.' : notes.join(' '));
   }
+}
+
+class AdaptationCheck {
+  /// Title of the completed anime that covers the manga, if any.
+  final String? coveredBy;
+  final String note;
+  const AdaptationCheck(this.coveredBy, this.note);
 }

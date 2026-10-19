@@ -317,11 +317,11 @@ class Picker {
         if (e.userStatus == UserStatus.completed) e.malId,
     };
     if (completedAnime.isEmpty) return false;
-    final hit = await _resolver.watchedFullAdaptation(
+    final check = await _resolver.watchedFullAdaptation(
       mangaId,
       completed: completedAnime.contains,
     );
-    return hit != null;
+    return check.coveredBy != null;
   }
 
   /// False if Donghua is switched off and this is Chinese animation.

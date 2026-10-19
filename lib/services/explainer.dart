@@ -220,22 +220,15 @@ class Explainer {
           for (final e in LibraryStore.instance.anime)
             if (e.userStatus == UserStatus.completed) e.malId,
         };
-        final adaptations =
-            await DetailStore.instance.animeAdaptationsOf(t.malId);
-        final hit = completedAnime.isEmpty
-            ? null
-            : await _resolver.watchedFullAdaptation(
-                t.malId,
-                completed: completedAnime.contains,
-              );
-        if (hit != null) {
-          add(false, 'You completed the anime "$hit", which fully adapts '
-              'this manga.');
-        } else if (adaptations.isEmpty) {
-          add(null, 'No anime adaptation found.');
+        final check = await _resolver.watchedFullAdaptation(
+          t.malId,
+          completed: completedAnime.contains,
+        );
+        if (check.coveredBy != null) {
+          add(false, 'You completed the anime "${check.coveredBy}", which '
+              'fully adapts this manga. ${check.note}');
         } else {
-          add(true, 'Has an anime adaptation, but you haven\'t completed one '
-              'that covers the whole manga.');
+          add(true, 'Anime adaptation check: ${check.note}');
         }
       } on MalException catch (e) {
         add(null, 'Couldn\'t check anime adaptations: ${e.message}');
