@@ -227,6 +227,13 @@ class Explainer {
           watched: (id) {
             final x = statusOf(id);
             return x == UserStatus.completed || x == UserStatus.current;
+          },
+          watchedTitles: {
+            for (final e in listed.values)
+              if (e.userStatus == UserStatus.completed ||
+                  e.userStatus == UserStatus.current)
+                FranchiseResolver.normalizeTitle(e.title):
+                    (id: e.malId, title: e.title),
           });
       add(alt == null, alt == null
           ? 'No alternative version you\'ve already seen.'

@@ -253,7 +253,9 @@ class Picker {
         return _Outcome(null, key);
       }
       if (await _resolver.watchedAlternative(cand.malId,
-              anime: ctx.anime, watched: ctx.watched) !=
+              anime: ctx.anime,
+              watched: ctx.watched,
+              watchedTitles: ctx.watchedTitles) !=
           null) {
         return _Outcome(null, key);
       }
@@ -310,7 +312,9 @@ class Picker {
       return _Outcome(null, key);
     }
     if (await _resolver.watchedAlternative(entry.malId,
-            anime: ctx.anime, watched: ctx.watched) !=
+            anime: ctx.anime,
+            watched: ctx.watched,
+            watchedTitles: ctx.watchedTitles) !=
         null) {
       return _Outcome(null, key);
     }
@@ -444,7 +448,7 @@ class _Context {
   final bool allowDonghua;
   final SettingsStore settings;
 
-  const _Context({
+  _Context({
     required this.anime,
     required this.listed,
     required this.catalogById,
@@ -452,6 +456,14 @@ class _Context {
     required this.allowDonghua,
     required this.settings,
   });
+
+  /// Normalized titles of everything watched/read, for matching versions.
+  late final Map<String, ({int id, String title})> watchedTitles = {
+    for (final e in listed.values)
+      if (e.userStatus == UserStatus.completed ||
+          e.userStatus == UserStatus.current)
+        FranchiseResolver.normalizeTitle(e.title): (id: e.malId, title: e.title),
+  };
 
   /// Completed or currently watching/reading.
   bool watched(int malId) {

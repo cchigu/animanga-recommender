@@ -386,20 +386,45 @@ class FranchiseResolver {
     );
   }
 
-  /// The title of an alternative version (same story, other telling: an LN
-  /// vs its manga, a remake vs the original) of [id] that the user has
-  /// watched/read, or null.
+  /// Lower-cased title with punctuation and spaces removed, for matching
+  /// two versions that share a name ("Mikkakan no Koufuku").
+  static String normalizeTitle(String t) =>
+      t.toLowerCase().replaceAll(RegExp(r'[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]'), '');
+
+  /// The title of another version of the same story (an LN vs its manga, a
+  /// remake vs the original) that the user has watched/read, or null.
+  /// Checks MAL "alternative version" links, AniList's ALTERNATIVE /
+  /// SOURCE / ADAPTATION links, and finally an exact title match against
+  /// [watchedTitles] (normalized title → title, watched entries only).
   Future<String?> watchedAlternative(
     int id, {
     required bool anime,
     required bool Function(int malId) watched,
+    Map<String, ({int id, String title})> watchedTitles = const {},
   }) async {
     final d = await _store.get(id, anime: anime);
     if (d == null) return null;
-    for (final altId in d.relatedOfType({'alternative_version'})) {
-      if (!watched(altId)) continue;
-      final alt = await _store.get(altId, anime: anime);
-      return alt?.title ?? 'MAL #$altId';
+
+    Future<String> nameOf(int altId) async =>
+        (await _store.get(altId, anime: anime))?.title ?? 'MAL #$altId';
+
+    // 1. MAL links.
+    for (final altId
+        in d.relatedOfType({'alternative_version', 'adaptation'})) {
+      if (watched(altId)) return nameOf(altId);
+    }
+
+    // 2. Same title already on your list.
+    for (final name in {d.title, if (d.englishTitle != null) d.englishTitle!}) {
+      final norm = normalizeTitle(name);
+      if (norm.length < 6) continue; // too short to trust
+      final hit = watchedTitles[norm];
+      if (hit != null && hit.id != id) return hit.title;
+    }
+
+    // 3. AniList links.
+    for (final altId in await _store.otherVersionsOf(id, anime: anime)) {
+      if (watched(altId)) return nameOf(altId);
     }
     return null;
   }

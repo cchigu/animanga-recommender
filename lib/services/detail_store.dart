@@ -31,6 +31,7 @@ class DetailStore {
   final Map<String, AniListInfo> _aniInfo = {};
   final Map<int, AniListSource> _aniSource = {};
   final Map<int, List<int>> _mangaAdaptations = {};
+  final Map<String, List<int>> _otherVersions = {};
   final Map<String, Future<TitleDetail?>> _inFlight = {};
 
   int _running = 0;
@@ -57,6 +58,10 @@ class DetailStore {
         final d = TitleDetail.fromJson(e as Map<String, dynamic>);
         _details[_key(d.malId, d.isAnime)] = d;
       }
+      final ver = j['ver'] as Map<String, dynamic>? ?? const {};
+      ver.forEach((k, v) {
+        _otherVersions[k] = [for (final x in v as List) x as int];
+      });
       final madp = j['madp'] as Map<String, dynamic>? ?? const {};
       madp.forEach((k, v) {
         final id = int.tryParse(k);
@@ -94,6 +99,9 @@ class DetailStore {
         await f.writeAsString(jsonEncode({
           'v': _version,
           'd': [for (final d in _details.values) d.toJson()],
+          'ver': {
+            for (final e in _otherVersions.entries) e.key: e.value,
+          },
           'madp': {
             for (final e in _mangaAdaptations.entries) '${e.key}': e.value,
           },
@@ -234,6 +242,19 @@ class DetailStore {
       _mangaAdaptations[mangaMalId] = ids;
       _scheduleSave();
     }
+    return ids;
+  }
+
+  /// Other versions of the same story in the same medium, per AniList.
+  /// Cached; empty if AniList can't be reached; never throws.
+  Future<List<int>> otherVersionsOf(int id, {required bool anime}) async {
+    final key = _key(id, anime);
+    final cached = _otherVersions[key];
+    if (cached != null) return cached;
+    final ids = await _aniList.aniListOtherVersions(id, anime: anime);
+    if (ids == null) return const [];
+    _otherVersions[key] = ids;
+    _scheduleSave();
     return ids;
   }
 

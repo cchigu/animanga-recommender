@@ -313,6 +313,70 @@ query ($id: Int) {
     return null;
   }
 
+  static const _versionsQuery = r'''
+query ($id: Int, $type: MediaType) {
+  Media(idMal: $id, type: $type) {
+    relations {
+      edges {
+        relationType(version: 2)
+        node { type idMal }
+      }
+    }
+  }
+}''';
+
+  /// MAL ids of other tellings of the same story in the same medium (a
+  /// novel and its manga, a remake and its original), from AniList's
+  /// ALTERNATIVE / SOURCE / ADAPTATION links. Null if AniList can't be
+  /// reached.
+  Future<List<int>?> aniListOtherVersions(int malId,
+      {required bool anime}) async {
+    final type = anime ? 'ANIME' : 'MANGA';
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final http.Response res;
+      try {
+        res = await _client
+            .post(
+              Uri.parse(_aniList),
+              headers: const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'query': _versionsQuery,
+                'variables': {'id': malId, 'type': type},
+              }),
+            )
+            .timeout(_timeout);
+      } catch (_) {
+        return null;
+      }
+      _learnRateLimit(res);
+      if (res.statusCode == 429) {
+        final wait = int.tryParse(res.headers['retry-after'] ?? '') ?? 30;
+        await Future.delayed(Duration(seconds: wait + 1));
+        continue;
+      }
+      if (res.statusCode == 404) return const [];
+      if (res.statusCode != 200) return null;
+      final media = ((jsonDecode(res.body) as Map)['data'] as Map?)?['Media'];
+      if (media is! Map) return const [];
+      const kinds = {'ALTERNATIVE', 'SOURCE', 'ADAPTATION'};
+      final edges = (media['relations'] as Map?)?['edges'] as List? ?? [];
+      return [
+        for (final e in edges)
+          if (e is Map &&
+              kinds.contains(e['relationType']) &&
+              e['node'] is Map &&
+              (e['node'] as Map)['type'] == type &&
+              (e['node'] as Map)['idMal'] is int &&
+              (e['node'] as Map)['idMal'] != malId)
+            (e['node'] as Map)['idMal'] as int,
+      ];
+    }
+    return null;
+  }
+
   static String _dateKey(Map? d) {
     final y = d?['year'] as int?;
     if (y == null) return '9999';
