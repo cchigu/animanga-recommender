@@ -30,7 +30,7 @@ class PickResult {
 /// 1. Builds the candidate list (catalog + planned titles, minus anything
 ///    already on the user's list, filtered by format/status/score).
 /// 2. Orders it by the pick mode: best score first, weighted-random order
-///    by (score − 5)⁴, or a plain shuffle.
+///    by (score − 6.5)⁴ of each franchise's best entry, or a shuffle.
 /// 3. Walks that order, checking each candidate's franchise (strict
 ///    "completed", first major entry, Plan to Watch/Read across the chain),
 ///    and returns the first one that passes.
@@ -48,16 +48,34 @@ class Picker {
   final _rng = Random();
   final _resolver = FranchiseResolver();
 
+  /// Proposal weight for titles scored 6.5 or lower, so a low-rated first
+  /// season can still lead to its franchise when a later entry is rated
+  /// higher.
+  static const _minProposal = 0.02;
+
+  /// Best MAL score among a franchise's main entries (no recaps/specials).
+  static double? bestScore(Franchise f) {
+    double? best;
+    for (final m in f.mainByDate) {
+      final sc = m.malScore;
+      if (sc != null && (best == null || sc > best)) best = sc;
+    }
+    return best;
+  }
+
   /// Shown this session, so "Pick another" moves on.
   final Set<int> _shownAnime = {};
   final Set<int> _shownManga = {};
   final Set<int> _shownFranchisesAnime = {};
   final Set<int> _shownFranchisesManga = {};
 
-  /// (score − 5)⁴, zero at or below 5 and for unscored titles.
+  /// Scores at or below this get zero weight in Weighted random.
+  static const weightFloorScore = 6.5;
+
+  /// (score − 6.5)⁴, zero at or below 6.5 and for unscored titles.
   static double weightFor(double? score) {
-    if (score == null || score <= 5) return 0;
-    final d = score - 5;
+    if (score == null || score <= weightFloorScore) return 0;
+    final d = score - weightFloorScore;
     return d * d * d * d;
   }
 
@@ -196,6 +214,28 @@ class Picker {
           skippedAsShown++;
           continue;
         }
+        // Weighted random: keep this franchise with probability set by its
+        // best entry's weight. Candidates were drawn by their own score, so
+        // divide by the draw weight of all its candidates (a franchise with
+        // three seasons in the pool gets three draws, not three times the
+        // chance).
+        if (settings.pickMode == PickMode.weighted && outcome.chain != null) {
+          final chain = outcome.chain!;
+          final target = weightFor(bestScore(chain));
+          final ids = {for (final m in chain.members) m.malId};
+          var drawn = 0.0;
+          for (final c in current) {
+            if (ids.contains(c.malId)) {
+              drawn += max(weightFor(c.malScore), _minProposal);
+            }
+          }
+          if (drawn <= 0) drawn = max(weightFor(cand.malScore), _minProposal);
+          final keep = target <= 0 ? 0.0 : min(1.0, target / drawn);
+          if (_rng.nextDouble() >= keep) {
+            if (outcome.franchiseKey != null) tried.add(outcome.franchiseKey!);
+            continue;
+          }
+        }
         shown.add(entry.malId);
         if (outcome.franchiseKey != null) {
           shownFranchises.add(outcome.franchiseKey!);
@@ -233,11 +273,12 @@ class Picker {
     // ---- First entry off: the candidate itself is the pick ----------------
     if (!s.firstEntryOnly) {
       int? key;
-      if (needStatus) {
-        final chain = await _resolver.chainOf(cand.malId, anime: ctx.anime);
+      Franchise? chain;
+      if (needStatus || s.pickMode == PickMode.weighted) {
+        chain = await _resolver.chainOf(cand.malId, anime: ctx.anime);
         if (chain == null) return const _Outcome(null, null);
         key = chain.key;
-        if (!s.completion.contains(chain.completion)) {
+        if (needStatus && !s.completion.contains(chain.completion)) {
           return _Outcome(null, key);
         }
       }
@@ -260,7 +301,7 @@ class Picker {
         return _Outcome(null, key);
       }
       if (!await _passesDonghua(cand, ctx)) return _Outcome(null, key);
-      return _Outcome(await _withColor(cand, ctx), key);
+      return _Outcome(await _withColor(cand, ctx), key, chain);
     }
 
     // ---- First entry on: work out the franchise's entry ------------------
@@ -321,7 +362,7 @@ class Picker {
 
     final title = _fromDetail(entry, ctx);
     if (!await _passesDonghua(title, ctx)) return _Outcome(null, key);
-    return _Outcome(await _withColor(title, ctx), key);
+    return _Outcome(await _withColor(title, ctx), key, chain);
   }
 
   /// Manga: skipped if "Exclude adapted manga" is on and its anime add up
@@ -407,8 +448,7 @@ class Picker {
         // which each title comes first with probability w / Σw.
         final keyed = <(double, CatalogTitle)>[];
         for (final t in list) {
-          final w = weightFor(t.malScore);
-          if (w <= 0) continue;
+          final w = max(weightFor(t.malScore), _minProposal);
           final u = _rng.nextDouble();
           keyed.add((pow(u == 0 ? 1e-12 : u, 1 / w).toDouble(), t));
         }
@@ -495,7 +535,10 @@ class _Context {
 class _Outcome {
   final CatalogTitle? entry;
   final int? franchiseKey;
-  const _Outcome(this.entry, this.franchiseKey);
+
+  /// The franchise that was checked, when known (for its best score).
+  final Franchise? chain;
+  const _Outcome(this.entry, this.franchiseKey, [this.chain]);
 }
 
 class _Attempt {

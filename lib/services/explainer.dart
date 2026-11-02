@@ -129,10 +129,6 @@ class Explainer {
 
     if (s.pickMode != PickMode.random && (t.malScore ?? 0) <= 0) {
       add(false, 'No MAL score, and ${s.pickMode.label} needs one.');
-    } else if (s.pickMode == PickMode.weighted &&
-        Picker.weightFor(t.malScore) <= 0) {
-      add(false, 'MAL score ${t.malScore} is 5 or lower, so its weight '
-          '(score − 5)⁴ is zero.');
     } else {
       add(null, 'MAL score: ${t.malScore?.toStringAsFixed(2) ?? 'none'}.');
     }
@@ -154,6 +150,17 @@ class Explainer {
         add(null, '   • ${m.title} — ${formatLabel(m.mediaType)}, '
             '${releaseLabel(m.releaseStatus)}, ${_span(m)}; '
             'you: ${yourStatus(m.malId)}');
+      }
+
+      if (s.pickMode == PickMode.weighted) {
+        final best = Picker.bestScore(chain);
+        final w = Picker.weightFor(best);
+        add(w > 0, best == null
+            ? 'No entry in the franchise has a MAL score, so its weight is zero.'
+            : 'Weight comes from the franchise\'s best entry, '
+                '${best.toStringAsFixed(2)}: (${best.toStringAsFixed(2)} − 6.5)⁴ '
+                '= ${w.toStringAsFixed(2)}'
+                '${w > 0 ? '' : ', so it\'s never picked in Weighted random'}.');
       }
 
       if (chain.endedRecently) {

@@ -17,7 +17,8 @@ enum Completion {
 /// How to choose among eligible titles (setting 3).
 enum PickMode {
   bestScore('Best score', 'Highest MAL score you haven\'t seen'),
-  weighted('Weighted random', 'Random, weighted by (score − 5)⁴'),
+  weighted('Weighted random',
+      'Random, weighted by (score − 6.5)⁴ of the franchise\'s best entry'),
   random('Completely random', 'Every eligible title equally likely');
 
   final String label;
