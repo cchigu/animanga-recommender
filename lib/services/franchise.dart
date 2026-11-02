@@ -95,6 +95,22 @@ class FranchiseResolver {
   static bool coversSource(DateTime animeEnd, DateTime sourceEnd) =>
       !animeEnd.isBefore(sourceEnd.subtract(adaptationSlack));
 
+  /// Sources with no story for the anime to work through: anime originals,
+  /// and games/music/etc. whose anime tell their own story. These count as
+  /// having nothing left to adapt. Visual novels, manga and novels are
+  /// excluded, since an anime can cover only part of them.
+  static const _noStorySourcesMal = {
+    'original', 'game', 'video_game', 'card_game', 'music', 'other',
+    'mixed_media', 'picture_book', 'radio',
+  };
+  static const _noStorySourcesAniList = {
+    'ORIGINAL', 'GAME', 'VIDEO_GAME', 'MULTIMEDIA_PROJECT', 'OTHER',
+    'PICTURE_BOOK', 'LIVE_ACTION',
+  };
+
+  static String _sourceLabel(String raw) =>
+      raw.toLowerCase().replaceAll('_', ' ');
+
   /// Formats that count as extras rather than main entries.
   static const extraTypes = {
     'movie', 'ova', 'special', 'tv_special', 'music', 'cm', 'pv',
@@ -154,8 +170,12 @@ class FranchiseResolver {
     if (mains.isEmpty) return (false, 'No main entries to compare.');
     final animeEnd = f.latestMainEnd;
     if (animeEnd == null) return (false, 'No end date on MAL.');
-    if (mains.first.source == 'original') {
-      return (true, 'Anime original (MAL), so nothing is left to adapt.');
+    final malSource = mains.first.source;
+    if (malSource != null && _noStorySourcesMal.contains(malSource)) {
+      return (true, malSource == 'original'
+          ? 'Anime original (MAL), so nothing is left to adapt.'
+          : 'Based on a ${_sourceLabel(malSource)} (MAL), with its own story, '
+              'so nothing is left to adapt.');
     }
 
     String verdict(bool finished, DateTime? sourceEnd, String what) {
@@ -201,8 +221,12 @@ class FranchiseResolver {
     // 2. AniList.
     final ani = await _store.aniListSource(mains.first.malId);
     if (ani != null) {
-      if (ani.sourceType == 'ORIGINAL') {
-        return (true, 'Anime original (AniList), so nothing is left to adapt.');
+      final aniSource = ani.sourceType;
+      if (aniSource != null && _noStorySourcesAniList.contains(aniSource)) {
+        return (true, aniSource == 'ORIGINAL'
+            ? 'Anime original (AniList), so nothing is left to adapt.'
+            : 'Based on a ${_sourceLabel(aniSource)} (AniList), with its own '
+                'story, so nothing is left to adapt.');
       }
       if (ani.hasSourceWork) {
         final full = ani.sourceFinished &&
